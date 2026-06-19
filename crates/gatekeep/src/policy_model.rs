@@ -51,6 +51,41 @@ pub enum Policy<O> {
     Permit(O),
     /// Unconditional denial.
     Deny,
+    /// Conditional permit with denial metadata.
+    Grant {
+        /// Outcome granted when the condition succeeds.
+        outcome: O,
+        /// Predicate that guards the grant.
+        condition: Condition,
+        /// Optional trace label for this clause.
+        label: Option<ClauseLabel>,
+        /// Shape exposed when the grant condition fails.
+        deny_shape: DenyShape,
+        /// Obligations attached to a successful grant.
+        obligations: Vec<ObligationId>,
+        /// Reason code attached to a failed grant.
+        reason: Option<ReasonCode>,
+    },
+    /// Meet composition across child policies.
+    All(Vec<Self>),
+    /// Join composition across child policies.
+    Any(Vec<Self>),
+    /// Fallback policy used only when the primary denies.
+    OrElse {
+        /// Primary policy.
+        primary: Box<Self>,
+        /// Fallback policy.
+        fallback: Box<Self>,
+    },
+}
+
+/// Residual policy produced by partial evaluation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResidualPolicy<O> {
+    /// Unconditional permit with an outcome.
+    Permit(O),
+    /// Unconditional denial.
+    Deny,
     /// Constant permit that preserves decisive trace metadata.
     PermitWithTrace {
         /// Granted outcome.
@@ -90,15 +125,15 @@ pub enum Policy<O> {
         /// Reason code attached to a failed grant.
         reason: Option<ReasonCode>,
     },
-    /// Meet composition across child policies.
+    /// Meet composition across child residual policies.
     All(Vec<Self>),
-    /// Join composition across child policies.
+    /// Join composition across child residual policies.
     Any(Vec<Self>),
-    /// Fallback policy used only when the primary denies.
+    /// Fallback residual used only when the primary denies.
     OrElse {
-        /// Primary policy.
+        /// Primary residual.
         primary: Box<Self>,
-        /// Fallback policy.
+        /// Fallback residual.
         fallback: Box<Self>,
     },
 }

@@ -2,8 +2,8 @@
 
 use gatekeep::{
     ClauseLabel, DenyShape, Effect, Fact, FactId, KnownFacts, Lattice, ObligationSpec,
-    PartialFacts, Policy, Presence, Residual, StaticFactId, StaticObligationId, condition,
-    evaluate, partial_evaluate, policy, required_facts,
+    PartialFacts, Policy, Presence, Residual, StaticFactId, StaticObligationId, complete_residual,
+    condition, evaluate, partial_evaluate, policy, required_facts,
 };
 use proptest::prelude::*;
 
@@ -331,15 +331,15 @@ fn partial_any_keeps_top_permit_pending_to_preserve_obligations() -> Result<(), 
         .with_present::<RoleAccess>()
         .with_present::<ResourceFull>();
 
-    let residual = match partial_evaluate(&policy, &partial) {
-        Residual::Pending { residual, .. } => residual,
+    let reduced = partial_evaluate(&policy, &partial);
+    let decision = match &reduced {
+        Residual::Pending { .. } => complete_residual(&reduced, &completed),
         Residual::Resolved(_) => {
             return Err(TestError::Message(
                 "top permit with pending top arm must remain pending",
             ));
         }
     };
-    let decision = evaluate(&residual, &completed);
 
     assert_eq!(decision.effect, Effect::Permit(ReadTier::Full));
     assert_eq!(decision.obligations.len(), 2);
@@ -424,10 +424,11 @@ fn partial_any_pending_keeps_first_resolved_denial_metadata() -> Result<(), Test
         .with_absent::<ResourceFull>();
 
     let original = evaluate(&policy, &completed);
-    let Residual::Pending { residual, .. } = partial_evaluate(&policy, &partial) else {
+    let reduced = partial_evaluate(&policy, &partial);
+    if !matches!(&reduced, Residual::Pending { .. }) {
         return Err(TestError::Message("unknown fact should keep any pending"));
-    };
-    let reduced = evaluate(&residual, &completed);
+    }
+    let reduced = complete_residual(&reduced, &completed);
 
     assert_denial_metadata(&original, "first", Some("first_denied"), DenyShape::Hidden)?;
     assert_denial_metadata(&reduced, "first", Some("first_denied"), DenyShape::Hidden)?;
@@ -453,12 +454,13 @@ fn partial_or_else_pending_primary_keeps_fallback_denial_metadata() -> Result<()
         .with_absent::<ResourceShared>();
 
     let original = evaluate(&policy, &completed);
-    let Residual::Pending { residual, .. } = partial_evaluate(&policy, &partial) else {
+    let reduced = partial_evaluate(&policy, &partial);
+    if !matches!(&reduced, Residual::Pending { .. }) {
         return Err(TestError::Message(
             "unknown primary should keep or_else pending",
         ));
-    };
-    let reduced = evaluate(&residual, &completed);
+    }
+    let reduced = complete_residual(&reduced, &completed);
 
     assert_denial_metadata(
         &original,
@@ -475,6 +477,31 @@ fn partial_or_else_pending_primary_keeps_fallback_denial_metadata() -> Result<()
     assert_denial_fact_params(&original, &["resource_shared"])?;
     assert_denial_fact_params(&reduced, &["resource_shared"])?;
     Ok(())
+}
+
+#[test]
+fn complete_residual_merges_prior_and_residual_consulted_facts() {
+    let policy = policy::all([
+        policy::grant(ReadTier::Shared, condition::has::<RoleAccess>()),
+        policy::grant(ReadTier::Full, condition::has::<ResourceFull>()),
+    ]);
+    let partial = PartialFacts::new()
+        .with_present::<RoleAccess>()
+        .with_unknown::<ResourceFull>();
+    let completed = KnownFacts::new()
+        .with_present::<RoleAccess>()
+        .with_present::<ResourceFull>();
+    let reduced = partial_evaluate(&policy, &partial);
+
+    let decision = complete_residual(&reduced, &completed);
+    let consulted = decision
+        .trace
+        .consulted
+        .iter()
+        .map(|(fact, _presence)| fact.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(consulted, vec!["role_access", "resource_full"]);
 }
 
 #[test]
@@ -562,7 +589,7 @@ proptest! {
         let reduced = partial_evaluate(&policy, &partial);
         let residual = match reduced {
             Residual::Resolved(decision) => decision,
-            Residual::Pending { residual, .. } => evaluate(&residual, &completed),
+            Residual::Pending { .. } => complete_residual(&reduced, &completed),
         };
 
         prop_assert_eq!(residual.effect, original.effect);

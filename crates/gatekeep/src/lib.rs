@@ -28,7 +28,7 @@ pub use decision::{
     Decision, DecisionTrace, DecisiveClause, DenialReason, DenyShape, Effect, ReasonValue, Trace,
     TraceClause, TraceError,
 };
-pub use evaluate::{evaluate, required_facts};
+pub use evaluate::{evaluate, evaluate_residual, required_facts};
 pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
     ClauseLabel, Fact, FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec,
@@ -36,5 +36,5 @@ pub use identity::{
     StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId, StaticTenantId,
     SubjectRef, TenantId,
 };
-pub use partial::{Residual, partial_evaluate};
-pub use policy_model::{Condition, Lattice, Policy};
+pub use partial::{Residual, complete_residual, partial_evaluate};
+pub use policy_model::{Condition, Lattice, Policy, ResidualPolicy};

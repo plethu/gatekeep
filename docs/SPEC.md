@@ -235,25 +235,10 @@ explicitly when they need Boolean identities.
 /// explicit constants.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Policy<O> {
-    /// Unconditionally permit with outcome `O`; used directly and by residuals.
+    /// Unconditionally permit with outcome `O`.
     Permit(O),
-    /// Unconditionally deny; used directly, for empty combinators, and by residuals.
+    /// Unconditionally deny; used directly and for empty combinators.
     Deny,
-    /// Residual constant that preserves a resolved permit's decisive trace.
-    PermitWithTrace {
-        outcome: O,
-        obligations: Vec<ObligationId>,
-        satisfied: Vec<FactId>,
-        label: Option<ClauseLabel>,
-    },
-    /// Residual constant that preserves a resolved denial's decisive trace.
-    DenyWithTrace {
-        denied: Option<O>,
-        unsatisfied: Vec<FactId>,
-        label: Option<ClauseLabel>,
-        reason: Option<ReasonCode>,
-        shape: DenyShape,
-    },
     /// Permit with outcome `O` when the condition holds; otherwise deny.
     Grant {
         outcome: O,
@@ -281,9 +266,9 @@ pub enum Policy<O> {
 `.hidden()`, `.with_obligation::<O>()`, `.reason(..)`). `policy::permit(outcome)`
 and `policy::deny()` construct metadata-light constants; user-facing denial
 reasons come from denied grants, not from a bare `Deny` constant.
-`PermitWithTrace` and `DenyWithTrace` are emitted by partial evaluation when a
-resolved arm must remain inside a pending residual; hand-written policies should
-prefer `Permit`, `Deny`, and `Grant`.
+
+Partial evaluation uses a separate `ResidualPolicy<O>` (§5.3) so author-facing
+policies do not expose trace-preservation nodes.
 
 ### 4.3 Facts and fact identity
 
@@ -445,10 +430,6 @@ order, producing `(Effect<O>, obligations, DecisiveClause)` and accumulating
   permit decisive clause.
 - **`Policy::Deny`** → `Deny` with no specific reason metadata and default
   `Forbidden` shape.
-- **`Policy::PermitWithTrace` / `Policy::DenyWithTrace`** → the corresponding
-  effect with the stored obligations and decisive clause. These nodes are
-  residual constants produced by §5.3 so a partially reduced policy can still
-  explain the same specific arm after later full evaluation.
 - **`Grant`** → if `condition` holds, `Permit(outcome)` with the grant's
   `obligations` and `DecisiveClause::Permit { granted, satisfied, label }`; else
   `Deny` with
@@ -605,17 +586,65 @@ read?" without an N-row evaluation loop. Ships in v1.
 #[must_use]
 pub fn partial_evaluate<O: Lattice>(policy: &Policy<O>, known: &PartialFacts) -> Residual<O>;
 
+pub fn evaluate_residual<O: Lattice>(
+    policy: &ResidualPolicy<O>,
+    known: &KnownFacts,
+) -> Decision<O>;
+
+pub fn complete_residual<O: Lattice>(
+    residual: &Residual<O>,
+    known: &KnownFacts,
+) -> Decision<O>;
+
 pub enum Residual<O> {
     /// The known facts alone settle the decision; no resource lookup needed.
     Resolved(Decision<O>),
     /// Decision still depends on unknown (resource-level) facts. `residual` is
     /// the simplified policy over only those facts; hand it to a QueryLowering
     /// adapter (§5.5) to push down into a backend filter.
-    Pending { residual: Policy<O>, consulted: Vec<(FactId, Presence)> },
+    Pending { residual: ResidualPolicy<O>, consulted: Vec<(FactId, Presence)> },
+}
+
+pub enum ResidualPolicy<O> {
+    Permit(O),
+    Deny,
+    PermitWithTrace {
+        outcome: O,
+        obligations: Vec<ObligationId>,
+        satisfied: Vec<FactId>,
+        label: Option<ClauseLabel>,
+    },
+    DenyWithTrace {
+        denied: Option<O>,
+        unsatisfied: Vec<FactId>,
+        label: Option<ClauseLabel>,
+        reason: Option<ReasonCode>,
+        shape: DenyShape,
+    },
+    Grant {
+        outcome: O,
+        condition: Condition,
+        label: Option<ClauseLabel>,
+        deny_shape: DenyShape,
+        obligations: Vec<ObligationId>,
+        reason: Option<ReasonCode>,
+    },
+    All(Vec<ResidualPolicy<O>>),
+    Any(Vec<ResidualPolicy<O>>),
+    OrElse {
+        primary: Box<ResidualPolicy<O>>,
+        fallback: Box<ResidualPolicy<O>>,
+    },
 }
 ```
 
-Like `evaluate`, `partial_evaluate` takes no `Context` (§3.1).
+Like `evaluate`, `partial_evaluate`, `evaluate_residual`, and
+`complete_residual` take no `Context` (§3.1). `ResidualPolicy` mirrors the
+executable policy algebra and adds traced constants used only when a resolved
+arm must remain inside a pending residual. `evaluate_residual` evaluates that
+AST alone; `complete_residual` is the trace-preserving completion path for a
+`Residual<O>` because it merges the `Pending.consulted` prefix with facts read
+from the residual AST.
 
 **Reduction rules.** Over three-valued presence, `Has(f)` is ⊤/⊥ for
 `Present`/`Absent` and stays the residual `Has(f)` for `Unknown`. Conditions
@@ -650,17 +679,19 @@ traced constant are already-decided trace data, not live predicates.
 
 **Soundness contract (testable):** for every completion `c` assigning
 `Present`/`Absent` to the unknown facts,
-`evaluate(residual, complete(known, c))` and `evaluate(policy, complete(known,
-c))` have the same `Effect` and obligations. When a resolved arm remains in a
-pending residual, traced constants preserve the decisive clause fields needed by
+`let residual = partial_evaluate(policy, known); complete_residual(&residual,
+complete(known, c))` and `evaluate(policy, complete(known, c))` have the same
+`Effect` and obligations. When a resolved arm remains in a pending residual,
+traced constants preserve the decisive clause fields needed by
 `denial_reason()` and audit traces: label, reason, shape, denied outcome, and
 deciding facts. This equivalence is covered by property and regression tests in
 the core suite.
 
 Lowering the residual into a query is an adapter concern, never the kernel's:
-core emits the residual `Policy<O>`; a `QueryLowering` backend (§5.5) translates
-it into a query. Which facts are principal- vs resource-scoped is declared by the
-resolver, which marks resource facts `Unknown` when resolving for a list query.
+core emits the residual `ResidualPolicy<O>`; a `QueryLowering` backend (§5.5)
+translates it into a query. Which facts are principal- vs resource-scoped is
+declared by the resolver, which marks resource facts `Unknown` when resolving
+for a list query.
 
 ### 5.4 Denial reasons and i18n
 
@@ -713,10 +744,10 @@ bare `Policy::Deny` has no specific reason metadata and yields `Ok(None)`.
 
 ### 5.5 Lowering a residual to a query
 
-§5.3 produces a `Residual::Pending { residual, .. }`: a `Policy<O>` over only the
-`Unknown` (resource-level) facts plus explicit constants, with every
-principal-level fact already folded away. Lowering turns that residual into a
-backend query so a list endpoint returns exactly the authorized rows — and,
+§5.3 produces a `Residual::Pending { residual, .. }`: a `ResidualPolicy<O>` with
+live predicates only for `Unknown` resource-level facts, plus explicit constants
+and traced constants for already-decided arms. Lowering turns that residual into
+a backend query so a list endpoint returns exactly the authorized rows — and,
 where the outcome is graded, each row's tier. Lowering lives entirely in the
 backend adapter; core only emits the residual.
 
@@ -729,7 +760,7 @@ both:
 pub trait QueryLowering<O> {
     type Filter;      // boolean fragment for WHERE — rows where the residual permits
     type Projection;  // per-row expression computing the granted O (e.g. a CASE)
-    fn lower(&self, residual: &Policy<O>, cx: &Context)
+    fn lower(&self, residual: &ResidualPolicy<O>, cx: &Context)
         -> Result<Lowered<Self::Filter, Self::Projection>, LowerError>;
 }
 
@@ -773,11 +804,11 @@ resolved away in §5.3 — the residual never re-encodes principal predicates.
 | `Has(f)` | `predicate(f)` | — |
 | `Always` / `Never` (Condition) | `TRUE` / `FALSE` | — |
 | `Not` / `All` / `Any` (Condition) | `NOT` / `AND` / `OR` | — |
-| `Policy::Permit(o)` / `Policy::Deny` | `TRUE` / `FALSE` | constant `o` / — |
-| `PermitWithTrace` / `DenyWithTrace` | same as `Permit` / `Deny` | same as `Permit` / — |
-| `policy::grant(o, cond)` | `predicate(cond)` | `WHEN predicate(cond) THEN o` |
-| `Policy::All` (meet) | `AND` of arm filters | `LEAST` of arm grades |
-| `Policy::Any` (join) | `OR` of arm filters | `GREATEST` of arm grades |
+| `ResidualPolicy::Permit(o)` / `ResidualPolicy::Deny` | `TRUE` / `FALSE` | constant `o` / — |
+| `ResidualPolicy::PermitWithTrace` / `ResidualPolicy::DenyWithTrace` | same as `Permit` / `Deny` | same as `Permit` / — |
+| `ResidualPolicy::Grant` | `predicate(cond)` | `WHEN predicate(cond) THEN o` |
+| `ResidualPolicy::All` (meet) | `AND` of arm filters | `LEAST` of arm grades |
+| `ResidualPolicy::Any` (join) | `OR` of arm filters | `GREATEST` of arm grades |
 | `OrElse{primary,fallback}` | override rule below | `COALESCE(primary, fallback)` |
 
 `LEAST` / `GREATEST` model meet / join **only when `O` is totally ordered** — the
@@ -978,7 +1009,7 @@ pub trait AuditSink: Send + Sync {
 pub trait QueryLowering<O> {
     type Filter;
     type Projection;
-    fn lower(&self, residual: &Policy<O>, cx: &Context)
+    fn lower(&self, residual: &ResidualPolicy<O>, cx: &Context)
         -> Result<Lowered<Self::Filter, Self::Projection>, LowerError>;
 }
 

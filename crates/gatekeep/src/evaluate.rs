@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::{
     ClauseLabel, Condition, Decision, DecisionTrace, DecisiveClause, DenyShape, Effect, FactId,
-    KnownFacts, Lattice, ObligationId, Policy, PolicyHash, Presence, ReasonCode,
+    KnownFacts, Lattice, ObligationId, Policy, PolicyHash, Presence, ReasonCode, ResidualPolicy,
 };
 
 #[must_use]
@@ -12,6 +12,24 @@ use crate::{
 pub fn evaluate<O: Lattice>(policy: &Policy<O>, facts: &KnownFacts) -> Decision<O> {
     let mut consulted = Consulted::default();
     let result = eval_policy(policy, facts, &mut consulted);
+    Decision {
+        effect: result.effect,
+        obligations: result.obligations,
+        trace: DecisionTrace {
+            consulted: consulted.into_vec(),
+            decisive: result.decisive,
+        },
+    }
+}
+
+#[must_use]
+/// Evaluates a residual policy against known facts.
+pub fn evaluate_residual<O: Lattice>(
+    policy: &ResidualPolicy<O>,
+    facts: &KnownFacts,
+) -> Decision<O> {
+    let mut consulted = Consulted::default();
+    let result = eval_residual_policy(policy, facts, &mut consulted);
     Decision {
         effect: result.effect,
         obligations: result.obligations,
@@ -84,37 +102,6 @@ fn eval_policy<O: Lattice>(
             },
         },
         Policy::Deny => generic_deny(),
-        Policy::PermitWithTrace {
-            outcome,
-            obligations,
-            satisfied,
-            label,
-        } => EvalResult {
-            effect: Effect::Permit(outcome.clone()),
-            obligations: obligations.clone(),
-            decisive: DecisiveClause::Permit {
-                granted: outcome.clone(),
-                satisfied: satisfied.clone(),
-                label: label.clone(),
-            },
-        },
-        Policy::DenyWithTrace {
-            denied,
-            unsatisfied,
-            label,
-            reason,
-            shape,
-        } => EvalResult {
-            effect: Effect::Deny,
-            obligations: Vec::new(),
-            decisive: DecisiveClause::Deny {
-                denied: denied.clone(),
-                unsatisfied: unsatisfied.clone(),
-                label: label.clone(),
-                reason: reason.clone(),
-                shape: *shape,
-            },
-        },
         Policy::Grant {
             outcome,
             condition,
@@ -134,14 +121,97 @@ fn eval_policy<O: Lattice>(
             facts,
             consulted,
         ),
-        Policy::All(policies) => eval_all(policies, facts, consulted),
-        Policy::Any(policies) => eval_any(policies, facts, consulted),
+        Policy::All(policies) => eval_all_by(policies, facts, consulted, eval_policy::<O>),
+        Policy::Any(policies) => eval_any_by(policies, facts, consulted, eval_policy::<O>),
         Policy::OrElse { primary, fallback } => {
             let primary = eval_policy(primary, facts, consulted);
             if matches!(primary.effect, Effect::Permit(_)) {
                 primary
             } else {
                 eval_policy(fallback, facts, consulted)
+            }
+        }
+    }
+}
+
+fn eval_residual_policy<O: Lattice>(
+    policy: &ResidualPolicy<O>,
+    facts: &KnownFacts,
+    consulted: &mut Consulted,
+) -> EvalResult<O> {
+    match policy {
+        ResidualPolicy::Permit(outcome) => EvalResult {
+            effect: Effect::Permit(outcome.clone()),
+            obligations: Vec::new(),
+            decisive: DecisiveClause::Permit {
+                granted: outcome.clone(),
+                satisfied: Vec::new(),
+                label: None,
+            },
+        },
+        ResidualPolicy::Deny => generic_deny(),
+        ResidualPolicy::PermitWithTrace {
+            outcome,
+            obligations,
+            satisfied,
+            label,
+        } => EvalResult {
+            effect: Effect::Permit(outcome.clone()),
+            obligations: obligations.clone(),
+            decisive: DecisiveClause::Permit {
+                granted: outcome.clone(),
+                satisfied: satisfied.clone(),
+                label: label.clone(),
+            },
+        },
+        ResidualPolicy::DenyWithTrace {
+            denied,
+            unsatisfied,
+            label,
+            reason,
+            shape,
+        } => EvalResult {
+            effect: Effect::Deny,
+            obligations: Vec::new(),
+            decisive: DecisiveClause::Deny {
+                denied: denied.clone(),
+                unsatisfied: unsatisfied.clone(),
+                label: label.clone(),
+                reason: reason.clone(),
+                shape: *shape,
+            },
+        },
+        ResidualPolicy::Grant {
+            outcome,
+            condition,
+            label,
+            deny_shape,
+            obligations,
+            reason,
+        } => eval_grant(
+            &GrantRef {
+                outcome,
+                condition,
+                label,
+                deny_shape: *deny_shape,
+                obligations,
+                reason,
+            },
+            facts,
+            consulted,
+        ),
+        ResidualPolicy::All(policies) => {
+            eval_all_by(policies, facts, consulted, eval_residual_policy::<O>)
+        }
+        ResidualPolicy::Any(policies) => {
+            eval_any_by(policies, facts, consulted, eval_residual_policy::<O>)
+        }
+        ResidualPolicy::OrElse { primary, fallback } => {
+            let primary = eval_residual_policy(primary, facts, consulted);
+            if matches!(primary.effect, Effect::Permit(_)) {
+                primary
+            } else {
+                eval_residual_policy(fallback, facts, consulted)
             }
         }
     }
@@ -187,10 +257,11 @@ struct GrantRef<'a, O> {
     reason: &'a Option<ReasonCode>,
 }
 
-fn eval_all<O: Lattice>(
-    policies: &[Policy<O>],
+fn eval_all_by<O: Lattice, P>(
+    policies: &[P],
     facts: &KnownFacts,
     consulted: &mut Consulted,
+    mut eval_arm: impl FnMut(&P, &KnownFacts, &mut Consulted) -> EvalResult<O>,
 ) -> EvalResult<O> {
     if policies.is_empty() {
         return generic_deny();
@@ -198,7 +269,7 @@ fn eval_all<O: Lattice>(
 
     let mut permit: Option<(O, Vec<ObligationId>, DecisiveClause<O>)> = None;
     for policy in policies {
-        let arm = eval_policy(policy, facts, consulted);
+        let arm = eval_arm(policy, facts, consulted);
         match arm.effect {
             Effect::Deny => return arm,
             Effect::Permit(outcome) => {
@@ -237,10 +308,11 @@ fn eval_all<O: Lattice>(
     }
 }
 
-fn eval_any<O: Lattice>(
-    policies: &[Policy<O>],
+fn eval_any_by<O: Lattice, P>(
+    policies: &[P],
     facts: &KnownFacts,
     consulted: &mut Consulted,
+    mut eval_arm: impl FnMut(&P, &KnownFacts, &mut Consulted) -> EvalResult<O>,
 ) -> EvalResult<O> {
     if policies.is_empty() {
         return generic_deny();
@@ -251,7 +323,7 @@ fn eval_any<O: Lattice>(
     let mut first_deny = None;
 
     for policy in policies {
-        let arm = eval_policy(policy, facts, consulted);
+        let arm = eval_arm(policy, facts, consulted);
         match arm.effect {
             Effect::Deny => {
                 if first_deny.is_none() {
@@ -420,10 +492,7 @@ fn union_obligations(target: &mut Vec<ObligationId>, source: Vec<ObligationId>) 
 
 fn collect_policy_facts<O>(policy: &Policy<O>, facts: &mut BTreeSet<FactId>) {
     match policy {
-        Policy::Permit(_)
-        | Policy::Deny
-        | Policy::PermitWithTrace { .. }
-        | Policy::DenyWithTrace { .. } => {}
+        Policy::Permit(_) | Policy::Deny => {}
         Policy::Grant { condition, .. } => collect_condition_facts(condition, facts),
         Policy::All(policies) | Policy::Any(policies) => {
             for policy in policies {

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    Decision, FactId, KnownFacts, Locale, ObligationId, PartialFacts, Policy, PolicyHash, PolicyId,
-    Presence, SubjectRef, TenantId, Trace,
+    Decision, FactId, KnownFacts, Locale, ObligationId, PartialFacts, PolicyHash, PolicyId,
+    Presence, ResidualPolicy, SubjectRef, TenantId, Trace,
 };
 
 /// Request-scoped data passed to adapter boundaries.
@@ -102,7 +102,7 @@ pub trait QueryLowering<O> {
     /// Lowers a residual policy for an authorized-list query.
     fn lower(
         &self,
-        residual: &Policy<O>,
+        residual: &ResidualPolicy<O>,
         cx: &Context,
     ) -> Result<Lowered<Self::Filter, Self::Projection>, LowerError>;
 }

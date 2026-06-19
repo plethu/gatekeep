@@ -1,5 +1,6 @@
 use crate::{
-    Condition, Decision, Effect, FactId, Lattice, PartialFacts, Policy, Presence, evaluate,
+    Condition, Decision, Effect, FactId, KnownFacts, Lattice, PartialFacts, Policy, Presence,
+    ResidualPolicy, evaluate, evaluate_residual,
 };
 
 /// Result of partial evaluation with possibly unknown facts.
@@ -10,7 +11,7 @@ pub enum Residual<O> {
     /// Evaluation needs more facts and produced a smaller residual policy.
     Pending {
         /// Remaining policy to evaluate after unknown facts are resolved.
-        residual: Policy<O>,
+        residual: ResidualPolicy<O>,
         /// Facts consulted while reducing the policy.
         consulted: Vec<(FactId, Presence)>,
     },
@@ -32,11 +33,26 @@ pub fn partial_evaluate<O: Lattice>(policy: &Policy<O>, facts: &PartialFacts) ->
     }
 }
 
+#[must_use]
+/// Completes a partial-evaluation result against known facts.
+pub fn complete_residual<O: Lattice>(residual: &Residual<O>, facts: &KnownFacts) -> Decision<O> {
+    match residual {
+        Residual::Resolved(decision) => decision.clone(),
+        Residual::Pending {
+            residual,
+            consulted,
+        } => {
+            let decision = evaluate_residual(residual, facts);
+            with_prior_consulted(decision, consulted)
+        }
+    }
+}
+
 #[derive(Clone)]
 enum ReducedPolicy<O> {
     Resolved(Decision<O>),
     Pending {
-        residual: Policy<O>,
+        residual: ResidualPolicy<O>,
         consulted: ConsultedList,
     },
 }
@@ -76,10 +92,7 @@ enum ReducedCondition {
 
 fn reduce_policy<O: Lattice>(policy: &Policy<O>, facts: &PartialFacts) -> ReducedPolicy<O> {
     match policy {
-        Policy::Permit(_)
-        | Policy::Deny
-        | Policy::PermitWithTrace { .. }
-        | Policy::DenyWithTrace { .. } => {
+        Policy::Permit(_) | Policy::Deny => {
             let known = partial_to_known(facts);
             ReducedPolicy::Resolved(evaluate(policy, &known))
         }
@@ -118,7 +131,7 @@ fn reduce_policy<O: Lattice>(policy: &Policy<O>, facts: &PartialFacts) -> Reduce
                 residual,
                 consulted,
             } => ReducedPolicy::Pending {
-                residual: Policy::Grant {
+                residual: ResidualPolicy::Grant {
                     outcome: outcome.clone(),
                     condition: residual,
                     label: label.clone(),
@@ -174,14 +187,14 @@ fn reduce_all<O: Lattice>(policies: &[Policy<O>], facts: &PartialFacts) -> Reduc
 
     if pending.is_empty() {
         let known = partial_to_known(facts);
-        let decision = evaluate(&Policy::All(resolved_permits), &known);
+        let decision = evaluate_residual(&ResidualPolicy::All(resolved_permits), &known);
         return ReducedPolicy::Resolved(with_consulted(decision, consulted));
     }
 
     let mut residual = resolved_permits;
     residual.extend(pending);
     ReducedPolicy::Pending {
-        residual: Policy::All(residual),
+        residual: ResidualPolicy::All(residual),
         consulted,
     }
 }
@@ -227,7 +240,7 @@ fn reduce_any<O: Lattice>(policies: &[Policy<O>], facts: &PartialFacts) -> Reduc
             return ReducedPolicy::Resolved(with_consulted(decision, consulted));
         }
         let known = partial_to_known(facts);
-        let decision = evaluate(&Policy::Any(resolved_permits), &known);
+        let decision = evaluate_residual(&ResidualPolicy::Any(resolved_permits), &known);
         return ReducedPolicy::Resolved(with_consulted(decision, consulted));
     }
 
@@ -239,7 +252,7 @@ fn reduce_any<O: Lattice>(policies: &[Policy<O>], facts: &PartialFacts) -> Reduc
     }
     residual.extend(pending);
     ReducedPolicy::Pending {
-        residual: Policy::Any(residual),
+        residual: ResidualPolicy::Any(residual),
         consulted,
     }
 }
@@ -279,7 +292,7 @@ fn reduce_or_else<O: Lattice>(
             ReducedPolicy::Resolved(decision) => {
                 consulted.extend(ConsultedList(decision.trace.consulted.clone()));
                 ReducedPolicy::Pending {
-                    residual: Policy::OrElse {
+                    residual: ResidualPolicy::OrElse {
                         primary: Box::new(primary_residual),
                         fallback: Box::new(policy_from_decision(decision)),
                     },
@@ -292,7 +305,7 @@ fn reduce_or_else<O: Lattice>(
             } => {
                 consulted.extend(fallback_consulted);
                 ReducedPolicy::Pending {
-                    residual: Policy::OrElse {
+                    residual: ResidualPolicy::OrElse {
                         primary: Box::new(primary_residual),
                         fallback: Box::new(fallback_residual),
                     },
@@ -478,18 +491,18 @@ fn reduce_condition_any(conditions: &[Condition], facts: &PartialFacts) -> Reduc
     }
 }
 
-fn policy_from_decision<O: Lattice>(decision: Decision<O>) -> Policy<O> {
+fn policy_from_decision<O: Lattice>(decision: Decision<O>) -> ResidualPolicy<O> {
     match decision.effect {
         Effect::Permit(outcome) => match decision.trace.decisive {
             crate::DecisiveClause::Permit {
                 satisfied, label, ..
-            } => Policy::PermitWithTrace {
+            } => ResidualPolicy::PermitWithTrace {
                 outcome,
                 obligations: decision.obligations,
                 satisfied,
                 label,
             },
-            crate::DecisiveClause::Deny { .. } => Policy::Permit(outcome),
+            crate::DecisiveClause::Deny { .. } => ResidualPolicy::Permit(outcome),
         },
         Effect::Deny => match decision.trace.decisive {
             crate::DecisiveClause::Deny {
@@ -499,14 +512,14 @@ fn policy_from_decision<O: Lattice>(decision: Decision<O>) -> Policy<O> {
                 reason,
                 shape,
                 ..
-            } => Policy::DenyWithTrace {
+            } => ResidualPolicy::DenyWithTrace {
                 denied,
                 unsatisfied,
                 label,
                 reason,
                 shape,
             },
-            crate::DecisiveClause::Permit { .. } => Policy::Deny,
+            crate::DecisiveClause::Permit { .. } => ResidualPolicy::Deny,
         },
     }
 }
@@ -519,6 +532,19 @@ fn with_consulted<O>(decision: Decision<O>, consulted: ConsultedList) -> Decisio
         },
         ..decision
     }
+}
+
+fn with_prior_consulted<O>(
+    mut decision: Decision<O>,
+    consulted: &[(FactId, Presence)],
+) -> Decision<O> {
+    let mut merged = ConsultedList::default();
+    for (fact, presence) in consulted {
+        merged.record(fact, *presence);
+    }
+    merged.extend(ConsultedList(decision.trace.consulted));
+    decision.trace.consulted = merged.into_vec();
+    decision
 }
 
 fn partial_to_known(facts: &PartialFacts) -> crate::KnownFacts {
