@@ -239,6 +239,21 @@ pub enum Policy<O> {
     Permit(O),
     /// Unconditionally deny; used directly, for empty combinators, and by residuals.
     Deny,
+    /// Residual constant that preserves a resolved permit's decisive trace.
+    PermitWithTrace {
+        outcome: O,
+        obligations: Vec<ObligationId>,
+        satisfied: Vec<FactId>,
+        label: Option<ClauseLabel>,
+    },
+    /// Residual constant that preserves a resolved denial's decisive trace.
+    DenyWithTrace {
+        denied: Option<O>,
+        unsatisfied: Vec<FactId>,
+        label: Option<ClauseLabel>,
+        reason: Option<ReasonCode>,
+        shape: DenyShape,
+    },
     /// Permit with outcome `O` when the condition holds; otherwise deny.
     Grant {
         outcome: O,
@@ -266,6 +281,9 @@ pub enum Policy<O> {
 `.hidden()`, `.with_obligation::<O>()`, `.reason(..)`). `policy::permit(outcome)`
 and `policy::deny()` construct metadata-light constants; user-facing denial
 reasons come from denied grants, not from a bare `Deny` constant.
+`PermitWithTrace` and `DenyWithTrace` are emitted by partial evaluation when a
+resolved arm must remain inside a pending residual; hand-written policies should
+prefer `Permit`, `Deny`, and `Grant`.
 
 ### 4.3 Facts and fact identity
 
@@ -427,6 +445,10 @@ order, producing `(Effect<O>, obligations, DecisiveClause)` and accumulating
   permit decisive clause.
 - **`Policy::Deny`** → `Deny` with no specific reason metadata and default
   `Forbidden` shape.
+- **`Policy::PermitWithTrace` / `Policy::DenyWithTrace`** → the corresponding
+  effect with the stored obligations and decisive clause. These nodes are
+  residual constants produced by §5.3 so a partially reduced policy can still
+  explain the same specific arm after later full evaluation.
 - **`Grant`** → if `condition` holds, `Permit(outcome)` with the grant's
   `obligations` and `DecisiveClause::Permit { granted, satisfied, label }`; else
   `Deny` with
@@ -602,14 +624,16 @@ Connectives reduce by their identities and short-circuits, leaving only
 undecided sub-policies and explicit constants in the residual:
 
 - **`All` (meet):** if any arm resolves `Deny`, the whole is `Resolved(Deny)`
-  (`Deny` annihilates meet). Otherwise the residual is the meet of the
-  resolved-`Permit` grades (`Policy::Permit(meet)`) with the still-pending arms;
+  (`Deny` annihilates meet). Otherwise the residual is the meet of resolved
+  permits, represented by traced permit constants, with the still-pending arms;
   if no arm remains pending it is `Resolved(Permit(meet))`.
 - **`Any` (join):** if any arm resolves `Permit(O::top())`, the whole is
   `Resolved(Permit(O::top()))`. Otherwise the residual is the join of the
-  resolved-`Permit` grade(s) with the still-pending arms; a resolved `Permit(o)`
-  for non-top `o` is **kept** in the residual because a pending arm may join
-  higher. If no arm remains pending it is `Resolved` at the join.
+  resolved-`Permit` grade(s) with the still-pending arms; a resolved permit for
+  non-top `o` is **kept** in the residual because a pending arm may join higher.
+  If there are pending arms and no resolved permit, the first resolved denial is
+  kept as `DenyWithTrace` so an all-deny completion keeps the same first-denial
+  reason metadata. If no arm remains pending it is `Resolved` at the join.
 - **`Not`:** reduces if its operand resolves; otherwise residual `Not`.
 - **`OrElse`:** if `primary` resolves `Permit`, drop `fallback` and return
   `primary`; if `primary` resolves `Deny`, recurse into `fallback`; if `primary`
@@ -619,19 +643,19 @@ undecided sub-policies and explicit constants in the residual:
   principal-level predicates.
 
 In a `Pending` result, `consulted` holds exactly the facts already resolved while
-reducing — the principal-level `Has` nodes that fired — with the same dedup as
-`DecisionTrace.consulted` (§5). Facts left in the residual (including those
-under an undecided `policy::or_else` fallback) are *not* counted as consulted
-until a later `evaluate` or `lower` reads them.
+reducing, with the same dedup as `DecisionTrace.consulted` (§5). Unknown facts
+that remain as live `Has` predicates in the residual are *not* counted as
+consulted until a later `evaluate` or `lower` reads them; facts stored inside a
+traced constant are already-decided trace data, not live predicates.
 
 **Soundness contract (testable):** for every completion `c` assigning
 `Present`/`Absent` to the unknown facts,
 `evaluate(residual, complete(known, c))` and `evaluate(policy, complete(known,
-c))` have the same `Effect` and obligations. Partial evaluation is a
-conservative authorization reduction, never a user-facing denial explanation.
-If a caller needs a durable trace or denial reason for a specific resource, it
-must run full `evaluate` on the original policy and `KnownFacts`. This
-equivalence is a property test in the core suite.
+c))` have the same `Effect` and obligations. When a resolved arm remains in a
+pending residual, traced constants preserve the decisive clause fields needed by
+`denial_reason()` and audit traces: label, reason, shape, denied outcome, and
+deciding facts. This equivalence is covered by property and regression tests in
+the core suite.
 
 Lowering the residual into a query is an adapter concern, never the kernel's:
 core emits the residual `Policy<O>`; a `QueryLowering` backend (§5.5) translates
@@ -750,6 +774,7 @@ resolved away in §5.3 — the residual never re-encodes principal predicates.
 | `Always` / `Never` (Condition) | `TRUE` / `FALSE` | — |
 | `Not` / `All` / `Any` (Condition) | `NOT` / `AND` / `OR` | — |
 | `Policy::Permit(o)` / `Policy::Deny` | `TRUE` / `FALSE` | constant `o` / — |
+| `PermitWithTrace` / `DenyWithTrace` | same as `Permit` / `Deny` | same as `Permit` / — |
 | `policy::grant(o, cond)` | `predicate(cond)` | `WHEN predicate(cond) THEN o` |
 | `Policy::All` (meet) | `AND` of arm filters | `LEAST` of arm grades |
 | `Policy::Any` (join) | `OR` of arm filters | `GREATEST` of arm grades |

@@ -17,9 +17,10 @@ separate project rather than a keepsake module.
 
 ## Status
 
-Design stage. [`docs/SPEC.md`](docs/SPEC.md) is the contract, and no code ships
-with it yet. The spec defines the model, the two-layer algebra, and the decision
-procedure; this README grows an install and usage section once the crates land.
+Early implementation. The `gatekeep` crate ships the pure policy model,
+evaluation, partial evaluation, traces, denial reasons, and adapter traits.
+[`docs/SPEC.md`](docs/SPEC.md) remains the design contract while the public API
+settles.
 
 ## Where it fits
 
@@ -33,6 +34,62 @@ service; those stay with the application or with crates built for them. Because
 each policy is reified as inspectable data, gatekeep can serialize, hash, diff,
 and explain a decision, and answer "which resources can this principal reach?"
 rather than only "may this principal reach this one?".
+
+## Usage
+
+```rust
+use gatekeep::{
+    condition, evaluate, policy, Effect, Fact, KnownFacts, Lattice, StaticFactId,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+enum ReadTier {
+    Released,
+    Full,
+}
+
+impl Lattice for ReadTier {
+    fn meet(&self, other: &Self) -> Self {
+        if *self == Self::Released || *other == Self::Released {
+            Self::Released
+        } else {
+            Self::Full
+        }
+    }
+
+    fn join(&self, other: &Self) -> Self {
+        if *self == Self::Full || *other == Self::Full {
+            Self::Full
+        } else {
+            Self::Released
+        }
+    }
+
+    fn top() -> Self {
+        Self::Full
+    }
+
+    fn bottom() -> Self {
+        Self::Released
+    }
+}
+
+struct Staff;
+
+impl Fact for Staff {
+    const ID: StaticFactId = StaticFactId::new("staff");
+}
+
+let policy = policy::grant(ReadTier::Full, condition::has::<Staff>());
+let facts = KnownFacts::new().with_present::<Staff>();
+let decision = evaluate(&policy, &facts);
+
+assert_eq!(decision.effect, Effect::Permit(ReadTier::Full));
+```
+
+Partial evaluation uses the same policy value with `PartialFacts`: mark
+request-known facts as present or absent, mark resource-level facts as unknown,
+then lower the returned residual policy in an application-owned adapter.
 
 ## Why it exists
 
