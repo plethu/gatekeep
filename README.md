@@ -19,6 +19,7 @@ separate project rather than a keepsake module.
 
 Early implementation. The `gatekeep` crate ships the pure policy model,
 evaluation, partial evaluation, traces, denial reasons, and adapter traits.
+`gatekeep-sqlx` starts the Postgres lowering adapter for residual policies.
 [`docs/SPEC.md`](docs/SPEC.md) remains the design contract while the public API
 settles.
 

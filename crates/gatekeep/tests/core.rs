@@ -2,8 +2,9 @@
 
 use gatekeep::{
     ClauseLabel, DenyShape, Effect, Fact, FactId, KnownFacts, Lattice, ObligationSpec,
-    PartialFacts, Policy, Presence, Residual, StaticFactId, StaticObligationId, complete_residual,
-    condition, evaluate, partial_evaluate, policy, required_facts,
+    PartialFacts, Policy, Presence, Residual, ResidualPolicy, ResidualPolicyBranch,
+    ResidualPolicyNode, StaticFactId, StaticObligationId, complete_residual, condition, evaluate,
+    partial_evaluate, policy, required_facts,
 };
 use proptest::prelude::*;
 
@@ -518,6 +519,103 @@ fn required_facts_are_sorted_and_deduped() {
         .collect::<Vec<_>>();
 
     assert_eq!(facts, vec!["resource_full", "role_access"]);
+}
+
+#[test]
+fn residual_policy_introspection_detects_constants_and_obligations() -> Result<(), TestError> {
+    let permit = ResidualPolicy::Permit(ReadTier::Shared);
+    let deny = ResidualPolicy::<ReadTier>::Deny;
+    let obligated_grant = ResidualPolicy::Grant {
+        outcome: ReadTier::Full,
+        condition: condition::has::<RoleAccess>(),
+        label: None,
+        deny_shape: DenyShape::Forbidden,
+        obligations: vec![gatekeep::ObligationId::new("break_glass")?],
+        reason: None,
+    };
+    let nested = ResidualPolicy::OrElse {
+        primary: Box::new(deny.clone()),
+        fallback: Box::new(obligated_grant.clone()),
+    };
+
+    assert!(permit.is_permit_constant());
+    assert!(!permit.is_deny_constant());
+    assert!(deny.is_deny_constant());
+    assert!(deny.is_constant());
+    assert!(!permit.carries_obligation());
+    assert!(obligated_grant.carries_obligation());
+    assert!(nested.carries_obligation());
+    Ok(())
+}
+
+#[test]
+fn residual_policy_fold_visits_bottom_up_in_source_order() {
+    let residual = ResidualPolicy::OrElse {
+        primary: Box::new(ResidualPolicy::All(vec![
+            ResidualPolicy::Permit(ReadTier::Shared),
+            ResidualPolicy::Deny,
+        ])),
+        fallback: Box::new(ResidualPolicy::Permit(ReadTier::Full)),
+    };
+
+    let folded = residual.fold(&mut |node| match node {
+        ResidualPolicyNode::Permit(outcome) => format!("permit:{outcome:?}"),
+        ResidualPolicyNode::Deny => "deny".to_owned(),
+        ResidualPolicyNode::PermitWithTrace { .. } => "permit_trace".to_owned(),
+        ResidualPolicyNode::DenyWithTrace { .. } => "deny_trace".to_owned(),
+        ResidualPolicyNode::Grant { .. } => "grant".to_owned(),
+        ResidualPolicyNode::All { arms, .. } => format!("all({})", arms.join(",")),
+        ResidualPolicyNode::Any { arms, .. } => format!("any({})", arms.join(",")),
+        ResidualPolicyNode::OrElse {
+            primary, fallback, ..
+        } => {
+            let fallback = fallback.unwrap_or_else(|| "skipped".to_owned());
+            format!("or_else({primary},{fallback})")
+        }
+    });
+
+    assert_eq!(folded, "or_else(all(permit:Shared,deny),permit:Full)");
+}
+
+#[test]
+fn residual_policy_try_fold_pruned_skips_selected_fallback() -> Result<(), TestError> {
+    let residual = ResidualPolicy::OrElse {
+        primary: Box::new(ResidualPolicy::Permit(ReadTier::Shared)),
+        fallback: Box::new(ResidualPolicy::Grant {
+            outcome: ReadTier::Full,
+            condition: condition::has::<RoleAccess>(),
+            label: None,
+            deny_shape: DenyShape::Forbidden,
+            obligations: vec![gatekeep::ObligationId::new("break_glass")?],
+            reason: None,
+        }),
+    };
+
+    let folded = residual.try_fold_pruned(
+        &mut |branch| match branch {
+            ResidualPolicyBranch::OrElseFallback { fallback, .. } => !fallback.carries_obligation(),
+        },
+        &mut |node| -> Result<_, TestError> {
+            Ok(match node {
+                ResidualPolicyNode::Permit(outcome) => format!("permit:{outcome:?}"),
+                ResidualPolicyNode::Deny => "deny".to_owned(),
+                ResidualPolicyNode::PermitWithTrace { .. } => "permit_trace".to_owned(),
+                ResidualPolicyNode::DenyWithTrace { .. } => "deny_trace".to_owned(),
+                ResidualPolicyNode::Grant { .. } => "grant".to_owned(),
+                ResidualPolicyNode::All { arms, .. } => format!("all({})", arms.join(",")),
+                ResidualPolicyNode::Any { arms, .. } => format!("any({})", arms.join(",")),
+                ResidualPolicyNode::OrElse {
+                    primary, fallback, ..
+                } => {
+                    let fallback = fallback.unwrap_or_else(|| "skipped".to_owned());
+                    format!("or_else({primary},{fallback})")
+                }
+            })
+        },
+    )?;
+
+    assert_eq!(folded, "or_else(permit:Shared,skipped)");
+    Ok(())
 }
 
 #[test]

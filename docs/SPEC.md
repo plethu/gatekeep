@@ -636,6 +636,46 @@ pub enum ResidualPolicy<O> {
         fallback: Box<ResidualPolicy<O>>,
     },
 }
+
+pub enum ResidualPolicyNode<'a, O, T> {
+    Permit(&'a O),
+    Deny,
+    PermitWithTrace { /* borrowed trace fields */ },
+    DenyWithTrace { /* borrowed trace fields */ },
+    Grant { /* borrowed grant fields */ },
+    All { policies: &'a [ResidualPolicy<O>], arms: Vec<T> },
+    Any { policies: &'a [ResidualPolicy<O>], arms: Vec<T> },
+    OrElse {
+        primary_policy: &'a ResidualPolicy<O>,
+        fallback_policy: &'a ResidualPolicy<O>,
+        primary: T,
+        fallback: Option<T>,
+    },
+}
+
+pub enum ResidualPolicyBranch<'a, O> {
+    OrElseFallback {
+        primary: &'a ResidualPolicy<O>,
+        fallback: &'a ResidualPolicy<O>,
+    },
+}
+
+impl<O> ResidualPolicy<O> {
+    pub const fn is_permit_constant(&self) -> bool;
+    pub const fn is_deny_constant(&self) -> bool;
+    pub const fn is_constant(&self) -> bool;
+    pub fn carries_obligation(&self) -> bool;
+    pub fn fold<T>(&self, visitor: &mut impl FnMut(ResidualPolicyNode<'_, O, T>) -> T) -> T;
+    pub fn try_fold<T, E>(
+        &self,
+        visitor: &mut impl FnMut(ResidualPolicyNode<'_, O, T>) -> Result<T, E>,
+    ) -> Result<T, E>;
+    pub fn try_fold_pruned<T, E>(
+        &self,
+        should_descend: &mut impl FnMut(&ResidualPolicyBranch<'_, O>) -> bool,
+        visitor: &mut impl FnMut(ResidualPolicyNode<'_, O, T>) -> Result<T, E>,
+    ) -> Result<T, E>;
+}
 ```
 
 Like `evaluate`, `partial_evaluate`, `evaluate_residual`, and
@@ -645,6 +685,14 @@ arm must remain inside a pending residual. `evaluate_residual` evaluates that
 AST alone; `complete_residual` is the trace-preserving completion path for a
 `Residual<O>` because it merges the `Pending.consulted` prefix with facts read
 from the residual AST.
+
+Adapters should use the core `ResidualPolicy` introspection helpers instead of
+duplicating structural walks. `fold` / `try_fold` visit children before their
+parent and preserve source order, so backends can build filters, projections, or
+analysis summaries bottom-up. When a parent must decide whether a branch should
+be visited at all, such as skipping obligation-carrying `OrElse` fallbacks for
+bulk listing, use `try_fold_pruned`; skipped `OrElse` fallbacks arrive at the
+visitor as `fallback: None`.
 
 **Reduction rules.** Over three-valued presence, `Has(f)` is ⊤/⊥ for
 `Present`/`Absent` and stays the residual `Has(f)` for `Unknown`. Conditions
@@ -801,7 +849,7 @@ resolved away in §5.3 — the residual never re-encodes principal predicates.
 
 | residual node | filter (Boolean) | grade projection |
 | --- | --- | --- |
-| `Has(f)` | `predicate(f)` | — |
+| `Has(f)` | `predicate(f) IS TRUE` | — |
 | `Always` / `Never` (Condition) | `TRUE` / `FALSE` | — |
 | `Not` / `All` / `Any` (Condition) | `NOT` / `AND` / `OR` | — |
 | `ResidualPolicy::Permit(o)` / `ResidualPolicy::Deny` | `TRUE` / `FALSE` | constant `o` / — |
@@ -809,7 +857,7 @@ resolved away in §5.3 — the residual never re-encodes principal predicates.
 | `ResidualPolicy::Grant` | `predicate(cond)` | `WHEN predicate(cond) THEN o` |
 | `ResidualPolicy::All` (meet) | `AND` of arm filters | `LEAST` of arm grades |
 | `ResidualPolicy::Any` (join) | `OR` of arm filters | `GREATEST` of arm grades |
-| `OrElse{primary,fallback}` | override rule below | `COALESCE(primary, fallback)` |
+| `OrElse{primary,fallback}` | override rule below | `CASE WHEN primary_filter THEN primary_grade ELSE fallback_grade END` |
 
 `LEAST` / `GREATEST` model meet / join **only when `O` is totally ordered** — the
 common tier case, mapped to an ordinal (`Released=0 < Shared=1 < Full=2`). For a
@@ -817,22 +865,30 @@ non-total lattice the grade is not a scalar SQL min/max, so `lower` returns
 `NonTotalGrade`; the Boolean filter is unaffected, so list *filtering* stays
 available for any `O` and only graded *projection* requires total order.
 
-**Override branches are not bulk-listed (default).** Per §6.3, break-glass and
-other obligation-carrying overrides are `policy::or_else` fallbacks. Lowering
-one into a list query would silently grant every matching row under a
-break-glass obligation and defeat its per-resource audit. So lowering descends
-only the `primary` of a `policy::or_else` whose fallback carries an obligation,
-dropping that fallback from both filter and projection. Bulk access via an
-override is opt-in, and when enabled it must emit an obligation marker column so
-every overridden row is auditable — it is never silent. (A `policy::or_else`
-whose fallback carries no obligation lowers normally, as `COALESCE`.)
+Fact predicates are normalized with `IS TRUE` so SQL `NULL` behaves like an
+absent fact. This preserves gatekeep's two-valued condition algebra: `Has(f)` is
+true only when the row predicate is true, and `Not(Has(f))` includes false and
+null rows.
+
+**Override branches are not bulk-listed.** Per §6.3, break-glass and other
+obligation-carrying overrides are `policy::or_else` fallbacks. Lowering one into
+a list query would silently grant every matching row under a break-glass
+obligation and defeat its per-resource audit. The initial `gatekeep-sqlx`
+lowerer descends only the `primary` of a `policy::or_else` whose fallback carries
+an obligation, dropping that fallback from both filter and projection. Bulk
+access via an override needs a wider lowering result with an obligation marker
+column so every overridden row is auditable; it is not exposed until that API
+exists. A `policy::or_else` whose fallback carries no obligation lowers normally
+with a `CASE WHEN primary_filter THEN primary_grade ELSE fallback_grade END`
+projection.
 
 **Soundness contract (testable), mirroring §5.3.** For every candidate row `r`,
 the lowered query selects `r` iff `evaluate(policy, complete(known, facts(r)))`
-is a `Permit`, and the projected grade equals that `Permit`'s `O`.
-`gatekeep-sqlx` verifies this by differential testing: sample rows, evaluate
-each in-memory and via the lowered SQL, assert agreement. Unlowerable facts fail
-closed (`LowerError`); lowering never silently widens the result set.
+is a `Permit`, and the projected grade equals that `Permit`'s `O`. The initial
+`gatekeep-sqlx` tests cover generated SQL and sampled in-memory agreement;
+DB-backed differential tests should execute sampled rows via lowered SQL once
+the adapter grows database fixtures. Unlowerable facts fail closed
+(`LowerError`); lowering never silently widens the result set.
 
 ## 6. The algebra
 
@@ -1111,11 +1167,11 @@ Mirrors keepsake's `core + adapter` workspace.
   `ReasonCatalog` it is handed (typically `gatekeep-fluent`); it does not own
   localization. The denial/reason types live in core, so this stays a thin,
   swappable adapter (a future `gatekeep-actix` reuses everything but this crate).
-- `crates/gatekeep-sqlx` *(follows)* — RBAC/edge-role fact source over Postgres,
-  the `FactPredicates` mapping from resource `FactId`s to row predicates, and the
-  `QueryLowering` backend that turns a residual (§5.5) into a `WHERE` fragment
-  plus a grade `CASE` for authorized list queries, including the §5.5 differential
-  soundness test.
+- `crates/gatekeep-sqlx` — Postgres lowering adapter for residual policies:
+  resource `FactId`s map to trusted row predicates, and the `QueryLowering`
+  backend turns a residual (§5.5) into a `WHERE` fragment plus a grade
+  expression for authorized list queries. DB-backed fact resolution follows
+  after the lowering API has settled.
 - `examples/` — a billing-gate example, the send-app case-access example (§10),
   and an authorized-list example exercising partial evaluation.
 

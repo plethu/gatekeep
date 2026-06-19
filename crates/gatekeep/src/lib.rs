@@ -37,4 +37,6 @@ pub use identity::{
     SubjectRef, TenantId,
 };
 pub use partial::{Residual, complete_residual, partial_evaluate};
-pub use policy_model::{Condition, Lattice, Policy, ResidualPolicy};
+pub use policy_model::{
+    Condition, Lattice, Policy, ResidualPolicy, ResidualPolicyBranch, ResidualPolicyNode,
+};

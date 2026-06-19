@@ -1,0 +1,24 @@
+[package]
+name = "gatekeep-sqlx"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "SQLx query lowering adapter for gatekeep"
+readme = "../../README.md"
+categories = ["authentication", "database"]
+keywords = ["authorization", "policy", "authz", "sqlx"]
+
+[dependencies]
+gatekeep = { path = "../gatekeep", version = "0.1.0" }
+sqlx.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
