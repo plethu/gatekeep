@@ -23,8 +23,8 @@ exactly from its inputs.
 It is not a policy DSL, an authentication or session layer, or a network policy
 service; those stay with the application or with crates built for them. Because
 each policy is reified as inspectable data, gatekeep can serialize, hash, diff,
-and explain a decision, and answer "which resources can this principal reach?"
-rather than only "may this principal reach this one?".
+and explain a decision. It can also answer "which resources can this principal
+reach?", not just "may this principal reach this one?".
 
 ## Usage
 
@@ -81,33 +81,22 @@ fn read_access() -> GatekeepResult<()> {
 
 Partial evaluation reuses the same policy value with `PartialFacts`: mark
 request-known facts as present or absent, leave resource-level facts unknown,
-then lower the returned residual policy in an application-owned adapter. For
-Postgres list queries, `gatekeep-sqlx` maps live residual facts to trusted row
-predicates and appends a lowered filter and grade projection to a
-`sqlx::QueryBuilder`. See [`docs/SPEC.md`](docs/SPEC.md) and the `gatekeep-sqlx`
-docs for the lowering example, or
-[`examples/axum-authorized-list`](examples/axum-authorized-list) for an axum
-flow with in-process request facts. The
-[`examples/axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
-variant resolves request facts from keepsake before lowering resource facts into
-SQL.
+then lower the residual policy in an application-owned adapter. For Postgres list
+queries, `gatekeep-sqlx` maps residual facts to trusted row predicates and
+appends a lowered filter and grade projection to a `sqlx::QueryBuilder`.
 
-For point authorization, resolve every required fact into `KnownFacts` and call
-`evaluate` or `Gatekeeper::authorize`. For authorized list queries, resolve
-request/session facts, leave row-scoped facts as `Unknown` in `PartialFacts`, and
-lower only the residual resource predicates. Keep data-boundary predicates such
-as tenant id, soft-delete state, or jurisdiction outside the lowered
-authorization expression; compose them as ordinary application query scope before
-or around the gatekeep filter.
+See [`docs/SPEC.md`](docs/SPEC.md) for the lowering walkthrough, or the
+[`axum-authorized-list`](examples/axum-authorized-list) and
+[`axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
+examples for request facts resolved in-process and from keepsake.
 
 ## Why it exists
 
-The Rust authz ecosystem leans on external DSLs. A policy language earns its
-keep across many services and non-engineer authors, but for a single Rust
-service those benefits mostly disappear and the costs stay: a second language,
-the domain serialized into entities and attributes, and typos that fail at
-runtime instead of compile time. gatekeep keeps policies in Rust and takes one
-lesson from the DSL world, reifying them as data so they stay analyzable.
+The Rust authz ecosystem leans on external DSLs. A policy DSL is worth its
+overhead across many services and for non-engineer authors; for a single Rust
+service it mostly adds cost: a second language, the domain re-encoded as entities
+and attributes, and typos that fail at runtime instead of compile time. gatekeep
+keeps policies in Rust and reifies them as data, so they stay analyzable.
 
 ## License
 
