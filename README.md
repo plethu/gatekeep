@@ -85,10 +85,11 @@ then lower the residual policy in an application-owned adapter. For Postgres lis
 queries, `gatekeep-sqlx` maps residual facts to trusted row predicates and
 appends a lowered filter and grade projection to a `sqlx::QueryBuilder`.
 
-See [`docs/SPEC.md`](docs/SPEC.md) for the lowering walkthrough, or the
+For the lowering walkthrough, see the `gatekeep-sqlx` docs on
+[docs.rs](https://docs.rs/gatekeep-sqlx) and the
 [`axum-authorized-list`](examples/axum-authorized-list) and
 [`axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
-examples for request facts resolved in-process and from keepsake.
+examples, which resolve request facts in-process and from keepsake.
 
 ## Why it exists
 
