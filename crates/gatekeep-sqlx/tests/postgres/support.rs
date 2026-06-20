@@ -2,7 +2,10 @@ use gatekeep::{
     Condition, Context, Effect, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, Presence,
     QueryLowering, StaticFactId, SubjectRef, TenantId, evaluate_residual,
 };
-use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome};
+use gatekeep_sqlx::{
+    PgFactPredicates, PgFragment, PgLowerer, PgValue, PostgresBackend, SqlOutcome,
+    validate_database_url_for_backend,
+};
 use sqlx::{PgPool, Postgres, QueryBuilder, postgres::PgPoolOptions};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
@@ -177,6 +180,7 @@ pub const fn cases() -> [Case; 6] {
 
 pub async fn pool() -> TestResult<PgPool> {
     let database_url = std::env::var("DATABASE_URL")?;
+    validate_database_url_for_backend::<PostgresBackend>(&database_url)?;
     Ok(PgPoolOptions::new()
         .max_connections(1)
         .connect(&database_url)
@@ -272,6 +276,8 @@ pub type TestResult<T> = core::result::Result<T, TestError>;
 pub enum TestError {
     #[error(transparent)]
     Env(#[from] std::env::VarError),
+    #[error(transparent)]
+    Driver(#[from] gatekeep_sqlx::SqlxDriverError),
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]

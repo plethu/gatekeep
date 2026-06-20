@@ -1,9 +1,16 @@
 //! `SQLx` lowering for gatekeep residual policies.
 //!
-//! This crate lowers a `gatekeep::ResidualPolicy` into trusted Postgres SQL
-//! fragments that can be appended to a `sqlx::QueryBuilder`.
+//! This crate lowers a `gatekeep::ResidualPolicy` into trusted SQL fragments
+//! that can be appended to a `sqlx::QueryBuilder`.
 
 #![forbid(unsafe_code)]
+
+#[cfg(not(any(feature = "postgres", feature = "sqlite", feature = "mysql")))]
+compile_error!(
+    "gatekeep-sqlx requires at least one SQLx backend feature: postgres, sqlite, or mysql"
+);
+
+use std::marker::PhantomData;
 
 use gatekeep::{
     Condition, Context, FactId, LowerError, Lowered, QueryLowering, ResidualPolicy,
@@ -12,18 +19,48 @@ use gatekeep::{
 
 mod fragment;
 
-pub use fragment::{PgFragment, PgValue};
+#[cfg(feature = "mysql")]
+pub use fragment::MySqlBackend;
+#[cfg(feature = "sqlite")]
+pub use fragment::SqliteBackend;
+pub use fragment::{
+    GatekeepSqlxBackend, SqlxDriver, SqlxDriverError, SqlxFragment, SqlxValue,
+    infer_enabled_driver_from_url, validate_database_url_for_backend,
+};
+#[cfg(feature = "postgres")]
+pub use fragment::{PgFragment, PgValue, PostgresBackend};
+
+/// Maps a residual fact to a trusted predicate over the candidate row.
+pub trait SqlxFactPredicates<B>
+where
+    B: GatekeepSqlxBackend,
+{
+    /// Returns a predicate for the given fact, or `None` when the fact cannot be
+    /// represented by this backend.
+    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<SqlxFragment<B>>;
+}
 
 /// Maps a residual fact to a trusted Postgres predicate over the candidate row.
+#[cfg(feature = "postgres")]
 pub trait PgFactPredicates {
     /// Returns a predicate for the given fact, or `None` when the fact cannot be
     /// represented by this backend.
     fn predicate(&self, fact: &FactId, cx: &Context) -> Option<PgFragment>;
 }
 
+#[cfg(feature = "postgres")]
+impl<T> SqlxFactPredicates<PostgresBackend> for T
+where
+    T: PgFactPredicates,
+{
+    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<SqlxFragment<PostgresBackend>> {
+        PgFactPredicates::predicate(self, fact, cx)
+    }
+}
+
 /// Maps a policy outcome to a total-order SQL ordinal.
 pub trait SqlOutcome {
-    /// Returns the scalar ordinal used by SQL `LEAST` and `GREATEST`.
+    /// Returns the scalar ordinal used by SQL grade projection.
     fn to_sql_ordinal(&self) -> i64;
 }
 
@@ -34,18 +71,25 @@ impl SqlOutcome for () {
 }
 
 /// Projection strategy for turning outcomes into SQL fragments.
-pub trait OutcomeProjection<O> {
+pub trait OutcomeProjection<B, O>
+where
+    B: GatekeepSqlxBackend,
+{
     /// Builds a SQL fragment for a constant outcome.
-    fn constant(&self, outcome: &O) -> Result<PgFragment, LowerError>;
+    fn constant(&self, outcome: &O) -> Result<SqlxFragment<B>, LowerError>;
 }
 
 /// Outcome projection backed by [`SqlOutcome`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OrdinalProjection;
 
-impl<O: SqlOutcome> OutcomeProjection<O> for OrdinalProjection {
-    fn constant(&self, outcome: &O) -> Result<PgFragment, LowerError> {
-        Ok(PgFragment::bind(outcome.to_sql_ordinal()))
+impl<B, O> OutcomeProjection<B, O> for OrdinalProjection
+where
+    B: GatekeepSqlxBackend,
+    O: SqlOutcome,
+{
+    fn constant(&self, outcome: &O) -> Result<SqlxFragment<B>, LowerError> {
+        Ok(SqlxFragment::bind(outcome.to_sql_ordinal()))
     }
 }
 
@@ -53,26 +97,37 @@ impl<O: SqlOutcome> OutcomeProjection<O> for OrdinalProjection {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoGradeProjection;
 
-impl<O> OutcomeProjection<O> for NoGradeProjection {
-    fn constant(&self, _outcome: &O) -> Result<PgFragment, LowerError> {
+impl<B, O> OutcomeProjection<B, O> for NoGradeProjection
+where
+    B: GatekeepSqlxBackend,
+{
+    fn constant(&self, _outcome: &O) -> Result<SqlxFragment<B>, LowerError> {
         Err(LowerError::NonTotalGrade)
     }
 }
 
-/// Postgres lowerer for gatekeep residual policies.
+/// `SQLx` lowerer for gatekeep residual policies.
 #[derive(Clone, Debug)]
-pub struct PgLowerer<P, M = OrdinalProjection> {
+pub struct SqlxLowerer<B, P, M = OrdinalProjection> {
     predicates: P,
     projection: M,
+    backend: PhantomData<fn() -> B>,
 }
+
+/// Postgres lowerer for gatekeep residual policies.
+#[cfg(feature = "postgres")]
+pub type PgLowerer<P, M = OrdinalProjection> = SqlxLowerer<PostgresBackend, P, M>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct PgLowered {
-    filter: PgFragment,
-    grade: PgFragment,
+struct SqlxLowered<B> {
+    filter: SqlxFragment<B>,
+    grade: SqlxFragment<B>,
 }
 
-impl<P> PgLowerer<P, OrdinalProjection> {
+impl<B, P> SqlxLowerer<B, P, OrdinalProjection>
+where
+    B: GatekeepSqlxBackend,
+{
     /// Builds a lowerer using ordinal grade projection.
     #[must_use]
     pub const fn new(predicates: P) -> Self {
@@ -80,13 +135,17 @@ impl<P> PgLowerer<P, OrdinalProjection> {
     }
 }
 
-impl<P, M> PgLowerer<P, M> {
+impl<B, P, M> SqlxLowerer<B, P, M>
+where
+    B: GatekeepSqlxBackend,
+{
     /// Builds a lowerer using a caller-supplied projection strategy.
     #[must_use]
     pub const fn with_projection(predicates: P, projection: M) -> Self {
         Self {
             predicates,
             projection,
+            backend: PhantomData,
         }
     }
 
@@ -95,9 +154,9 @@ impl<P, M> PgLowerer<P, M> {
         &self,
         residual: &ResidualPolicy<O>,
         cx: &Context,
-    ) -> Result<PgFragment, LowerError>
+    ) -> Result<SqlxFragment<B>, LowerError>
     where
-        P: PgFactPredicates,
+        P: SqlxFactPredicates<B>,
     {
         residual.try_fold_pruned(
             &mut |branch| match branch {
@@ -111,18 +170,18 @@ impl<P, M> PgLowerer<P, M> {
 
     fn lower_filter_node<O>(
         &self,
-        node: ResidualPolicyNode<'_, O, PgFragment>,
+        node: ResidualPolicyNode<'_, O, SqlxFragment<B>>,
         cx: &Context,
-    ) -> Result<PgFragment, LowerError>
+    ) -> Result<SqlxFragment<B>, LowerError>
     where
-        P: PgFactPredicates,
+        P: SqlxFactPredicates<B>,
     {
         match node {
             ResidualPolicyNode::Permit(_) | ResidualPolicyNode::PermitWithTrace { .. } => {
-                Ok(PgFragment::trusted("TRUE"))
+                Ok(SqlxFragment::trusted("TRUE"))
             }
             ResidualPolicyNode::Deny | ResidualPolicyNode::DenyWithTrace { .. } => {
-                Ok(PgFragment::trusted("FALSE"))
+                Ok(SqlxFragment::trusted("FALSE"))
             }
             ResidualPolicyNode::Grant { condition, .. } => self.lower_condition(condition, cx),
             ResidualPolicyNode::All { arms, .. } => Ok(fragment_set(arms, " AND ", "FALSE")),
@@ -137,7 +196,7 @@ impl<P, M> PgLowerer<P, M> {
                     Ok(primary)
                 } else {
                     Ok(match fallback {
-                        Some(fallback) => PgFragment::binary(" OR ", vec![primary, fallback]),
+                        Some(fallback) => SqlxFragment::binary(" OR ", vec![primary, fallback]),
                         None => primary,
                     })
                 }
@@ -145,21 +204,26 @@ impl<P, M> PgLowerer<P, M> {
         }
     }
 
-    fn lower_condition(&self, condition: &Condition, cx: &Context) -> Result<PgFragment, LowerError>
+    fn lower_condition(
+        &self,
+        condition: &Condition,
+        cx: &Context,
+    ) -> Result<SqlxFragment<B>, LowerError>
     where
-        P: PgFactPredicates,
+        P: SqlxFactPredicates<B>,
     {
         match condition {
-            Condition::Always => Ok(PgFragment::trusted("TRUE")),
-            Condition::Never => Ok(PgFragment::trusted("FALSE")),
+            Condition::Always => Ok(SqlxFragment::trusted("TRUE")),
+            Condition::Never => Ok(SqlxFragment::trusted("FALSE")),
             Condition::Has(fact) => self
                 .predicates
                 .predicate(fact, cx)
                 .map(is_true)
                 .ok_or_else(|| LowerError::Unlowerable(fact.clone())),
-            Condition::Not(inner) => {
-                Ok(PgFragment::unary("NOT ", self.lower_condition(inner, cx)?))
-            }
+            Condition::Not(inner) => Ok(SqlxFragment::unary(
+                "NOT ",
+                self.lower_condition(inner, cx)?,
+            )),
             Condition::All(conditions) => {
                 lower_condition_set(conditions, " AND ", "FALSE", |item| {
                     self.lower_condition(item, cx)
@@ -177,10 +241,10 @@ impl<P, M> PgLowerer<P, M> {
         &self,
         residual: &ResidualPolicy<O>,
         cx: &Context,
-    ) -> Result<PgLowered, LowerError>
+    ) -> Result<SqlxLowered<B>, LowerError>
     where
-        P: PgFactPredicates,
-        M: OutcomeProjection<O>,
+        P: SqlxFactPredicates<B>,
+        M: OutcomeProjection<B, O>,
     {
         residual.try_fold_pruned(
             &mut |branch| match branch {
@@ -194,45 +258,47 @@ impl<P, M> PgLowerer<P, M> {
 
     fn lower_node<O>(
         &self,
-        node: ResidualPolicyNode<'_, O, PgLowered>,
+        node: ResidualPolicyNode<'_, O, SqlxLowered<B>>,
         cx: &Context,
-    ) -> Result<PgLowered, LowerError>
+    ) -> Result<SqlxLowered<B>, LowerError>
     where
-        P: PgFactPredicates,
-        M: OutcomeProjection<O>,
+        P: SqlxFactPredicates<B>,
+        M: OutcomeProjection<B, O>,
     {
         match node {
             ResidualPolicyNode::Permit(outcome)
-            | ResidualPolicyNode::PermitWithTrace { outcome, .. } => Ok(PgLowered {
-                filter: PgFragment::trusted("TRUE"),
+            | ResidualPolicyNode::PermitWithTrace { outcome, .. } => Ok(SqlxLowered {
+                filter: SqlxFragment::trusted("TRUE"),
                 grade: self.projection.constant(outcome)?,
             }),
-            ResidualPolicyNode::Deny | ResidualPolicyNode::DenyWithTrace { .. } => Ok(PgLowered {
-                filter: PgFragment::trusted("FALSE"),
-                grade: PgFragment::trusted("NULL"),
-            }),
+            ResidualPolicyNode::Deny | ResidualPolicyNode::DenyWithTrace { .. } => {
+                Ok(SqlxLowered {
+                    filter: SqlxFragment::trusted("FALSE"),
+                    grade: SqlxFragment::trusted("NULL"),
+                })
+            }
             ResidualPolicyNode::Grant {
                 outcome, condition, ..
             } => {
                 let filter = self.lower_condition(condition, cx)?;
                 let outcome = self.projection.constant(outcome)?;
-                Ok(PgLowered {
+                Ok(SqlxLowered {
                     filter: filter.clone(),
-                    grade: case_when(filter, outcome, PgFragment::trusted("NULL")),
+                    grade: case_when(filter, outcome, SqlxFragment::trusted("NULL")),
                 })
             }
             ResidualPolicyNode::All { arms, .. } => {
                 let (filters, grades) = unzip_lowered(arms);
-                Ok(PgLowered {
+                Ok(SqlxLowered {
                     filter: fragment_set(filters, " AND ", "FALSE"),
-                    grade: grade_set(grades, "LEAST"),
+                    grade: grade_set::<B>(grades, B::MIN_FUNCTION),
                 })
             }
             ResidualPolicyNode::Any { arms, .. } => {
                 let (filters, grades) = unzip_lowered(arms);
-                Ok(PgLowered {
+                Ok(SqlxLowered {
                     filter: fragment_set(filters, " OR ", "FALSE"),
-                    grade: grade_set(grades, "GREATEST"),
+                    grade: grade_set::<B>(grades, B::MAX_FUNCTION),
                 })
             }
             ResidualPolicyNode::OrElse {
@@ -246,8 +312,8 @@ impl<P, M> PgLowerer<P, M> {
                 }
 
                 Ok(match fallback {
-                    Some(fallback) => PgLowered {
-                        filter: PgFragment::binary(
+                    Some(fallback) => SqlxLowered {
+                        filter: SqlxFragment::binary(
                             " OR ",
                             vec![primary.filter.clone(), fallback.filter],
                         ),
@@ -260,13 +326,14 @@ impl<P, M> PgLowerer<P, M> {
     }
 }
 
-impl<O, P, M> QueryLowering<O> for PgLowerer<P, M>
+impl<O, B, P, M> QueryLowering<O> for SqlxLowerer<B, P, M>
 where
-    P: PgFactPredicates,
-    M: OutcomeProjection<O>,
+    B: GatekeepSqlxBackend,
+    P: SqlxFactPredicates<B>,
+    M: OutcomeProjection<B, O>,
 {
-    type Filter = PgFragment;
-    type Projection = PgFragment;
+    type Filter = SqlxFragment<B>;
+    type Projection = SqlxFragment<B>;
 
     fn lower(
         &self,
@@ -281,47 +348,88 @@ where
     }
 }
 
-fn lower_condition_set(
+fn lower_condition_set<B>(
     conditions: &[Condition],
     separator: &str,
     empty: &str,
-    lower: impl FnMut(&Condition) -> Result<PgFragment, LowerError>,
-) -> Result<PgFragment, LowerError> {
+    lower: impl FnMut(&Condition) -> Result<SqlxFragment<B>, LowerError>,
+) -> Result<SqlxFragment<B>, LowerError> {
     if conditions.is_empty() {
-        return Ok(PgFragment::trusted(empty));
+        return Ok(SqlxFragment::trusted(empty));
     }
     let fragments = conditions
         .iter()
         .map(lower)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(PgFragment::binary(separator, fragments))
+    Ok(SqlxFragment::binary(separator, fragments))
 }
 
-fn fragment_set(fragments: Vec<PgFragment>, separator: &str, empty: &str) -> PgFragment {
+fn fragment_set<B>(
+    fragments: Vec<SqlxFragment<B>>,
+    separator: &str,
+    empty: &str,
+) -> SqlxFragment<B> {
     if fragments.is_empty() {
-        PgFragment::trusted(empty)
+        SqlxFragment::trusted(empty)
     } else {
-        PgFragment::binary(separator, fragments)
+        SqlxFragment::binary(separator, fragments)
     }
 }
 
-fn grade_set(grades: Vec<PgFragment>, function: &str) -> PgFragment {
-    if grades.is_empty() {
-        PgFragment::trusted("NULL")
-    } else {
-        PgFragment::function(function, grades)
+fn grade_set<B>(grades: Vec<SqlxFragment<B>>, function: &str) -> SqlxFragment<B>
+where
+    B: GatekeepSqlxBackend,
+{
+    match grades.len() {
+        0 => SqlxFragment::trusted("NULL"),
+        1 => grades
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| SqlxFragment::trusted("NULL")),
+        _ if B::GRADE_FUNCTION_PROPAGATES_NULL => {
+            let mut iter = grades.into_iter();
+            let mut combined = iter.next().unwrap_or_else(|| SqlxFragment::trusted("NULL"));
+            for grade in iter {
+                combined = null_safe_grade_pair(function, combined, grade);
+            }
+            combined
+        }
+        _ => SqlxFragment::function(function, grades),
     }
 }
 
-fn unzip_lowered(lowered: Vec<PgLowered>) -> (Vec<PgFragment>, Vec<PgFragment>) {
+fn null_safe_grade_pair<B>(
+    function: &str,
+    left: SqlxFragment<B>,
+    right: SqlxFragment<B>,
+) -> SqlxFragment<B> {
+    let mut fragment = SqlxFragment::trusted("CASE WHEN ");
+    fragment.push_fragment(left.clone().wrapped());
+    fragment.push_sql(" IS NULL THEN ");
+    fragment.push_fragment(right.clone());
+    fragment.push_sql(" WHEN ");
+    fragment.push_fragment(right.clone().wrapped());
+    fragment.push_sql(" IS NULL THEN ");
+    fragment.push_fragment(left.clone());
+    fragment.push_sql(" ELSE ");
+    fragment.push_fragment(SqlxFragment::function(function, vec![left, right]));
+    fragment.push_sql(" END");
+    fragment
+}
+
+fn unzip_lowered<B>(lowered: Vec<SqlxLowered<B>>) -> (Vec<SqlxFragment<B>>, Vec<SqlxFragment<B>>) {
     lowered
         .into_iter()
         .map(|lowered| (lowered.filter, lowered.grade))
         .unzip()
 }
 
-fn case_when(condition: PgFragment, then_expr: PgFragment, else_expr: PgFragment) -> PgFragment {
-    let mut fragment = PgFragment::trusted("CASE WHEN ");
+fn case_when<B>(
+    condition: SqlxFragment<B>,
+    then_expr: SqlxFragment<B>,
+    else_expr: SqlxFragment<B>,
+) -> SqlxFragment<B> {
+    let mut fragment = SqlxFragment::trusted("CASE WHEN ");
     fragment.push_fragment(condition);
     fragment.push_sql(" THEN ");
     fragment.push_fragment(then_expr);
@@ -331,8 +439,8 @@ fn case_when(condition: PgFragment, then_expr: PgFragment, else_expr: PgFragment
     fragment
 }
 
-fn is_true(predicate: PgFragment) -> PgFragment {
-    let mut fragment = PgFragment::trusted("(");
+fn is_true<B>(predicate: SqlxFragment<B>) -> SqlxFragment<B> {
+    let mut fragment = SqlxFragment::trusted("(");
     fragment.push_fragment(predicate);
     fragment.push_sql(") IS TRUE");
     fragment

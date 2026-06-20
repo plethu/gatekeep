@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-axum"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-fluent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "fluent-bundle",
  "gatekeep",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-keepsake"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "gatekeep",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-sqlx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gatekeep",
  "serde",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "serde",
@@ -1112,6 +1112,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]

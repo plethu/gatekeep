@@ -81,9 +81,11 @@ fn read_access() -> GatekeepResult<()> {
 
 Partial evaluation reuses the same policy value with `PartialFacts`: mark
 request-known facts as present or absent, leave resource-level facts unknown,
-then lower the residual policy in an application-owned adapter. For Postgres list
-queries, `gatekeep-sqlx` maps residual facts to trusted row predicates and
+then lower the residual policy in an application-owned adapter. For SQL-backed
+list queries, `gatekeep-sqlx` maps residual facts to trusted row predicates and
 appends a lowered filter and grade projection to a `sqlx::QueryBuilder`.
+Postgres is the default backend; SQLite and MySQL are available behind feature
+flags.
 
 For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [docs.rs](https://docs.rs/gatekeep-sqlx) and the

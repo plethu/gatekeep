@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0] — 2026-06-20
+
+### `gatekeep-sqlx`
+
+- Added backend-aware SQLx lowering for Postgres, SQLite, and MySQL.
+- Kept the existing Postgres `Pg*` API as the default backend surface while
+  adding generic `Sqlx*` lowerer, fragment, value, and predicate types.
+- Added compile-time and runtime safeguards for SQLx backend feature selection
+  and database URL validation.
+- Added in-memory SQLite execution coverage and Docker-backed MySQL differential
+  coverage alongside the existing Postgres tests.
+
+### `gatekeep-keepsake`
+
+- Updated the keepsake dependency to `0.5.1`.
+
 ## [0.1.0] — 2026-06-20
 
 Initial release of all five crates.
@@ -44,4 +60,5 @@ Initial release of all five crates.
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
 
+[0.2.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.2.0
 [0.1.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.1.0

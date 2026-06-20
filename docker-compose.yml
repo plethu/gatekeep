@@ -12,3 +12,17 @@ services:
       interval: 2s
       timeout: 2s
       retries: 20
+  mysql:
+    image: mysql:9.5
+    environment:
+      MYSQL_DATABASE: gatekeep
+      MYSQL_USER: gatekeep
+      MYSQL_PASSWORD: gatekeep
+      MYSQL_ROOT_PASSWORD: gatekeep_root
+    ports:
+      - "53306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ugatekeep -pgatekeep --silent"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

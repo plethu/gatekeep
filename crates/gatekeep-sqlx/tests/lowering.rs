@@ -5,7 +5,14 @@ use gatekeep::{
     PartialFacts, Presence, QueryLowering, Residual, StaticFactId, SubjectRef, TenantId, condition,
     evaluate, partial_evaluate, policy,
 };
+#[cfg(feature = "sqlite")]
+use gatekeep_sqlx::SqliteBackend;
+#[cfg(feature = "mysql")]
+use gatekeep_sqlx::{MySqlBackend, SqlxFactPredicates, SqlxFragment, SqlxLowerer};
 use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome};
+use gatekeep_sqlx::{SqlxDriver, infer_enabled_driver_from_url, validate_database_url_for_backend};
+#[cfg(all(feature = "sqlite", not(feature = "mysql")))]
+use gatekeep_sqlx::{SqlxFactPredicates, SqlxFragment, SqlxLowerer};
 use sqlx::{
     Execute, Postgres, QueryBuilder,
     types::{
@@ -80,6 +87,38 @@ impl PgFactPredicates for Predicates {
             "owner" => {
                 let mut fragment = PgFragment::trusted("cases.owner_id = ");
                 fragment.push_fragment(PgFragment::bind("subject-1"));
+                Some(fragment)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl SqlxFactPredicates<SqliteBackend> for Predicates {
+    fn predicate(&self, fact: &FactId, _cx: &Context) -> Option<SqlxFragment<SqliteBackend>> {
+        match fact.as_str() {
+            "shared" => Some(SqlxFragment::trusted("cases.shared")),
+            "nullable_flag" => Some(SqlxFragment::trusted("cases.nullable_flag")),
+            "owner" => {
+                let mut fragment = SqlxFragment::trusted("cases.owner_id = ");
+                fragment.push_fragment(SqlxFragment::bind("subject-1"));
+                Some(fragment)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl SqlxFactPredicates<MySqlBackend> for Predicates {
+    fn predicate(&self, fact: &FactId, _cx: &Context) -> Option<SqlxFragment<MySqlBackend>> {
+        match fact.as_str() {
+            "shared" => Some(SqlxFragment::trusted("cases.shared")),
+            "nullable_flag" => Some(SqlxFragment::trusted("cases.nullable_flag")),
+            "owner" => {
+                let mut fragment = SqlxFragment::trusted("cases.owner_id = ");
+                fragment.push_fragment(SqlxFragment::bind("subject-1"));
                 Some(fragment)
             }
             _ => None,
@@ -281,6 +320,123 @@ fn fragments_append_to_sqlx_query_builder_with_stable_bind_order() -> Result<(),
 }
 
 #[test]
+fn database_url_driver_inference_matches_enabled_sqlx_features() -> Result<(), TestError> {
+    assert_eq!(
+        infer_enabled_driver_from_url("postgres://gatekeep@localhost/db")?,
+        SqlxDriver::Postgres
+    );
+    assert_eq!(
+        infer_enabled_driver_from_url("postgresql://gatekeep@localhost/db")?,
+        SqlxDriver::Postgres
+    );
+
+    #[cfg(feature = "sqlite")]
+    assert_eq!(
+        infer_enabled_driver_from_url("sqlite::memory:")?,
+        SqlxDriver::Sqlite
+    );
+
+    #[cfg(feature = "mysql")]
+    assert_eq!(
+        infer_enabled_driver_from_url("mysql://gatekeep@localhost/db")?,
+        SqlxDriver::MySql
+    );
+
+    let Err(error) = infer_enabled_driver_from_url("file:///tmp/gatekeep.db") else {
+        return Err(TestError::ExpectedDriverError);
+    };
+    assert_eq!(
+        error,
+        gatekeep_sqlx::SqlxDriverError::UnsupportedUrlScheme {
+            scheme: Some("file".to_owned()),
+        }
+    );
+    Ok(())
+}
+
+#[cfg(feature = "sqlite")]
+#[test]
+fn database_url_validation_rejects_backend_mismatch() -> Result<(), TestError> {
+    let Err(error) =
+        validate_database_url_for_backend::<SqliteBackend>("postgres://gatekeep@localhost/db")
+    else {
+        return Err(TestError::ExpectedDriverError);
+    };
+
+    assert_eq!(
+        error,
+        gatekeep_sqlx::SqlxDriverError::BackendMismatch {
+            expected: "sqlite",
+            actual: "postgres",
+        }
+    );
+    Ok(())
+}
+
+#[cfg(feature = "sqlite")]
+#[test]
+fn sqlite_fragments_use_question_mark_placeholders() -> Result<(), TestError> {
+    let residual = shared_or_owner_residual();
+    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+
+    assert_eq!(
+        lowered.filter.to_sql(),
+        "((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE)"
+    );
+    assert_eq!(
+        lowered.grade.to_sql(),
+        "CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE max(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END"
+    );
+    Ok(())
+}
+
+#[cfg(feature = "mysql")]
+#[test]
+fn mysql_fragments_use_question_mark_placeholders() -> Result<(), TestError> {
+    let residual = shared_or_owner_residual();
+    let lowered = SqlxLowerer::<MySqlBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+
+    assert_eq!(
+        lowered.filter.to_sql(),
+        "((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE)"
+    );
+    assert_eq!(
+        lowered.grade.to_sql(),
+        "CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE GREATEST(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END"
+    );
+    Ok(())
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_lowered_query_matches_in_memory_evaluation() -> Result<(), TestError> {
+    use sqlx::{Sqlite, sqlite::SqlitePoolOptions};
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await?;
+    reset_sqlite_database(&pool).await?;
+    insert_sqlite_cases(&pool).await?;
+
+    let residual = shared_or_owner_residual();
+    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+    let mut query = QueryBuilder::<Sqlite>::new("SELECT cases.id, ");
+    lowered.grade.push_to(&mut query);
+    query.push(" AS grade FROM cases WHERE ");
+    lowered.filter.push_to(&mut query);
+    query.push(" ORDER BY cases.id");
+
+    let rows = query
+        .build_query_as::<(i32, i64)>()
+        .fetch_all(&pool)
+        .await?;
+
+    assert_eq!(rows, vec![(2, 1), (3, 2), (4, 2)]);
+    Ok(())
+}
+
+#[test]
 fn fragments_support_common_postgres_bind_values() -> Result<(), TestError> {
     let values = common_bind_values()?;
     let fragment = values_fragment(&values);
@@ -329,6 +485,66 @@ fn empty_residual_combinators_lower_as_deny() -> Result<(), TestError> {
     Ok(())
 }
 
+fn shared_or_owner_residual() -> gatekeep::ResidualPolicy<Tier> {
+    gatekeep::ResidualPolicy::Any(vec![
+        gatekeep::ResidualPolicy::Grant {
+            outcome: Tier::Shared,
+            condition: condition::has::<Shared>(),
+            label: None,
+            deny_shape: gatekeep::DenyShape::Forbidden,
+            obligations: Vec::new(),
+            reason: None,
+        },
+        gatekeep::ResidualPolicy::Grant {
+            outcome: Tier::Full,
+            condition: condition::has::<Owner>(),
+            label: None,
+            deny_shape: gatekeep::DenyShape::Forbidden,
+            obligations: Vec::new(),
+            reason: None,
+        },
+    ])
+}
+
+#[cfg(feature = "sqlite")]
+async fn reset_sqlite_database(pool: &sqlx::SqlitePool) -> Result<(), TestError> {
+    sqlx::query(
+        r"
+        create table cases (
+            id integer primary key,
+            shared boolean not null,
+            owner_id text
+        )
+        ",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[cfg(feature = "sqlite")]
+async fn insert_sqlite_cases(pool: &sqlx::SqlitePool) -> Result<(), TestError> {
+    for (id, shared, owner_id) in [
+        (1, false, None),
+        (2, true, None),
+        (3, false, Some("subject-1")),
+        (4, true, Some("subject-1")),
+    ] {
+        sqlx::query(
+            r"
+            insert into cases (id, shared, owner_id)
+            values (?, ?, ?)
+            ",
+        )
+        .bind(id)
+        .bind(shared)
+        .bind(owner_id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
 fn common_bind_values() -> Result<Vec<PgValue>, TestError> {
     let date = Date::from_ordinal_date(2026, 171).map_err(|_| TestError::InvalidTemporalValue)?;
     let time = Time::from_hms(14, 30, 15).map_err(|_| TestError::InvalidTemporalValue)?;
@@ -367,12 +583,18 @@ enum TestError {
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
     Lower(#[from] gatekeep::LowerError),
+    #[error(transparent)]
+    Driver(#[from] gatekeep_sqlx::SqlxDriverError),
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
     #[error("test temporal value should be valid")]
     InvalidTemporalValue,
     #[error("partial evaluation unexpectedly resolved")]
     UnexpectedResolvedResidual,
     #[error("staff fact should be unlowerable")]
     ExpectedUnlowerableFact,
+    #[error("expected SQLx driver configuration error")]
+    ExpectedDriverError,
 }
 
 const fn presence(value: bool) -> Presence {
