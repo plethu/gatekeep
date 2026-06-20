@@ -1160,12 +1160,14 @@ Mirrors keepsake's `core + adapter` workspace.
   project-fluent `.ftl` bundles. Web-framework-agnostic: usable from axum, actix,
   Leptos SSR, or a CLI. Core owns the trait and the stable codes, so a gettext or
   ICU binding is a separate sibling, not a core change.
-- `crates/gatekeep-axum` — boundary integration: an extractor/middleware that
-  runs resolve→evaluate and maps `Effect`/deny-shape to responses (403 vs a
-  generic 404 for `Hidden`). It renders denial reasons through whatever
-  `ReasonCatalog` it is handed (typically `gatekeep-fluent`); it does not own
-  localization. The denial/reason types live in core, so this stays a thin,
-  swappable adapter (a future `gatekeep-actix` reuses everything but this crate).
+- `crates/gatekeep-axum` — boundary integration for handlers or middleware:
+  caller-owned policy/context selection, resolve→evaluate orchestration, audit
+  and observer recording, and `Effect`/deny-shape response mapping (403 vs a
+  generic 404 for `Hidden`). It renders forbidden denial reasons through whatever
+  `ReasonCatalog` it is handed (typically `gatekeep-fluent`) and never renders a
+  hidden denial's specific reason. The denial/reason types live in core, so this
+  stays a thin, swappable adapter (a future `gatekeep-actix` reuses everything
+  but this crate).
 - `crates/gatekeep-sqlx` — Postgres lowering adapter for residual policies:
   resource `FactId`s map to trusted row predicates, and the `QueryLowering`
   backend turns a residual (§5.5) into a `WHERE` fragment plus a grade
