@@ -116,7 +116,8 @@ Four ownership boundaries, mirroring keepsake's `core + adapter` split.
         ^                       ^                        ^
 +- gatekeep-keepsake -+  +- gatekeep-sqlx / app -+  +- in-memory (tests) -+
 | Entitlement / Hold  |  | RBAC edge roles, org   |  | literal KnownFacts  |
-| from KeepsakeStore  |  | membership, tenancy    |  | for pure unit tests |
+| from ActiveRelation |  | membership, tenancy    |  | for pure unit tests |
+| Source              |  |                        |  |                     |
 +---------------------+  +------------------------+  +---------------------+
 ```
 
@@ -1156,11 +1157,12 @@ Mirrors keepsake's `core + adapter` workspace.
   Synchronous. No IO dependencies.
 - `crates/gatekeep-keepsake` — fact-source adapter resolving keepsake relation
   ids (entitlements, holds, sanctions, gates) into gatekeep facts via an async
-  `ActiveRelationSource`, with a sync `KeepsakeStore` wrapper and optional
-  `keepsake-sqlx` implementation. Subject mapping is tenant-aware by default
-  and configurable for applications that already encode tenancy in keepsake
-  subjects. Query-mode facts are either resolved from the principal or explicitly
-  deferred for row-level lowering.
+  `keepsake::ActiveRelationSource`. The adapter uses bounded relation-id
+  lookups and composes with any keepsake source that implements that read-side
+  contract, including `keepsake-sqlx`. Subject mapping is tenant-aware by
+  default and configurable for applications that already encode tenancy in
+  keepsake subjects. Query-mode facts are either resolved from the principal or
+  explicitly deferred for row-level lowering.
 - `crates/gatekeep-fluent` — a `FluentCatalog: ReasonCatalog` (§5.4) over
   project-fluent `.ftl` bundles. Web-framework-agnostic: usable from axum, actix,
   Leptos SSR, or a CLI. Core owns the trait and the stable codes, so a gettext or

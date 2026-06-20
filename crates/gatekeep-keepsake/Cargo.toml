@@ -16,15 +16,14 @@ keywords = ["authorization", "policy", "authz", "relations"]
 async-trait.workspace = true
 gatekeep = { path = "../gatekeep", version = "0.1.0" }
 keepsake.workspace = true
-keepsake-sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
+keepsake = { workspace = true, features = ["test"] }
 tokio.workspace = true
 
 [features]
 default = []
-sqlx = ["dep:keepsake-sqlx"]
 
 [lints]
 workspace = true

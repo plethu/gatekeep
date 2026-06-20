@@ -11,11 +11,10 @@
 mod binding;
 mod error;
 mod resolver;
-mod source;
 mod subject;
 
 pub use binding::{FactBinding, FactBindingError, QueryPresence};
 pub use error::KeepsakeResolveError;
+pub use keepsake::ActiveRelationSource;
 pub use resolver::KeepsakeResolver;
-pub use source::{ActiveRelationSource, SyncKeepsakeStore};
 pub use subject::{PrincipalSubjectMapper, SubjectMapper, TenantScopedSubjectMapper};

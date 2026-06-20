@@ -32,6 +32,10 @@ async fn decision_resolution_maps_active_relations_to_known_facts() -> TestResul
         facts.presence(&fact_id("resource_member")?),
         Presence::Absent
     );
+    assert_eq!(
+        resolver.source().requested_relation_ids()?,
+        vec![vec![PaidPlanRelation::ID, ResourceMemberRelation::ID]]
+    );
     Ok(())
 }
 
@@ -108,6 +112,10 @@ async fn query_resolution_can_mix_known_and_deferred_facts() -> TestResult<()> {
     assert_eq!(
         facts.presence(&fact_id("resource_member")?),
         Presence::Unknown
+    );
+    assert_eq!(
+        resolver.source().requested_relation_ids()?,
+        vec![vec![PaidPlanRelation::ID]]
     );
     Ok(())
 }

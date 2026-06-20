@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use gatekeep::{
     Context, Fact, FactId, FactResolver, KnownFacts, PartialFacts, Presence, ResolveError,
 };
-use keepsake::{Keepsake, RelationId, RelationSpec};
+use keepsake::{ActiveRelation, ActiveRelationSource, RelationId, RelationSpec};
 
 use crate::{
-    ActiveRelationSource, FactBinding, FactBindingError, KeepsakeResolveError, QueryPresence,
-    SubjectMapper, SyncKeepsakeStore, TenantScopedSubjectMapper,
+    FactBinding, FactBindingError, KeepsakeResolveError, QueryPresence, SubjectMapper,
+    TenantScopedSubjectMapper,
 };
 
 /// Resolves gatekeep facts from active keepsake relations for the principal.
@@ -17,14 +17,6 @@ pub struct KeepsakeResolver<S, M = TenantScopedSubjectMapper> {
     source: S,
     subject_mapper: M,
     bindings: BTreeMap<FactId, FactBinding>,
-}
-
-impl<S> KeepsakeResolver<SyncKeepsakeStore<S>, TenantScopedSubjectMapper> {
-    /// Builds a resolver around a synchronous keepsake store.
-    #[must_use]
-    pub const fn from_store(store: S) -> Self {
-        Self::new(SyncKeepsakeStore::new(store))
-    }
 }
 
 impl<S> KeepsakeResolver<S, TenantScopedSubjectMapper> {
@@ -136,7 +128,8 @@ where
         cx: &Context,
     ) -> Result<KnownFacts, ResolveError<Self::Error>> {
         let bindings = self.bindings_for(required)?;
-        let active_relations = self.active_relation_ids(cx).await?;
+        let relation_ids = relation_ids(bindings.iter().copied());
+        let active_relations = self.active_relation_ids(cx, &relation_ids).await?;
         let entries = bindings.into_iter().map(|binding| {
             let presence = relation_presence(&active_relations, binding.relation_id);
             (binding.fact.clone(), presence)
@@ -154,7 +147,13 @@ where
             .iter()
             .any(|binding| binding.query_presence == QueryPresence::Resolve);
         let active_relations = if needs_active_lookup {
-            self.active_relation_ids(cx).await?
+            let relation_ids = relation_ids(
+                bindings
+                    .iter()
+                    .copied()
+                    .filter(|binding| binding.query_presence == QueryPresence::Resolve),
+            );
+            self.active_relation_ids(cx, &relation_ids).await?
         } else {
             BTreeSet::new()
         };
@@ -191,22 +190,33 @@ where
     async fn active_relation_ids(
         &self,
         cx: &Context,
+        relation_ids: &[RelationId],
     ) -> Result<BTreeSet<RelationId>, KeepsakeResolveError<S::Error>> {
         let subject = self.subject_mapper.subject(cx)?;
-        let keepsakes = self
+        let active_relations = self
             .source
-            .active_for_subject(&subject)
+            .active_relations_for_subject_by_ids(&subject, relation_ids)
             .await
             .map_err(KeepsakeResolveError::Source)?;
-        Ok(active_relation_ids(keepsakes))
+        Ok(active_relation_ids(active_relations))
     }
 }
 
-fn active_relation_ids(keepsakes: Vec<Keepsake>) -> BTreeSet<RelationId> {
-    keepsakes
+fn relation_ids<'binding>(
+    bindings: impl IntoIterator<Item = &'binding FactBinding>,
+) -> Vec<RelationId> {
+    bindings
         .into_iter()
-        .filter(Keepsake::is_active)
-        .map(|keepsake| keepsake.relation_id())
+        .map(FactBinding::relation_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn active_relation_ids(active_relations: Vec<ActiveRelation>) -> BTreeSet<RelationId> {
+    active_relations
+        .into_iter()
+        .map(|active| active.keepsake().relation_id())
         .collect()
 }
 

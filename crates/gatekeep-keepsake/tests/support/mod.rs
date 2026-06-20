@@ -1,18 +1,18 @@
 //! Test support for keepsake resolver integration tests.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
 };
 
-use async_trait::async_trait;
 use gatekeep::{Context, Fact, FactId, GatekeepError, Locale, StaticFactId, SubjectRef, TenantId};
-use gatekeep_keepsake::{ActiveRelationSource, KeepsakeResolver};
+use gatekeep_keepsake::KeepsakeResolver;
 use keepsake::{
-    ExpiryPolicy, Keepsake, RelationDefinition, SubjectRef as KeepsakeSubjectRef, relation_spec,
+    ActiveRelation, ActiveRelationSource, ExpiryPolicy, InMemoryActiveRelations, RelationId,
+    RelationKey, SubjectRef as KeepsakeSubjectRef, relation_spec,
 };
 use thiserror::Error;
 
@@ -58,13 +58,17 @@ relation_spec! {
 pub enum StoreError {
     #[error("store failed")]
     Failed,
+
+    #[error("source call recorder lock poisoned")]
+    Poisoned,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct FakeSource {
-    active: HashMap<KeepsakeSubjectRef, Vec<Keepsake>>,
+    inner: InMemoryActiveRelations,
     fail: bool,
     calls: Arc<AtomicUsize>,
+    requested_relation_ids: Arc<Mutex<Vec<Vec<RelationId>>>>,
 }
 
 impl FakeSource {
@@ -75,29 +79,77 @@ impl FakeSource {
         }
     }
 
-    fn with_active(mut self, subject: KeepsakeSubjectRef, keepsake: Keepsake) -> Self {
-        self.active.entry(subject).or_default().push(keepsake);
-        self
+    fn with_active_for_paid_plan(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
+        self.inner.insert_for_spec::<PaidPlanRelation>(
+            keepsake::__private::Uuid::from_u128(0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa),
+            subject,
+            fixed_time()?,
+            BTreeMap::new(),
+        )?;
+        Ok(self)
     }
 
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    pub fn requested_relation_ids(&self) -> Result<Vec<Vec<RelationId>>, StoreError> {
+        self.requested_relation_ids
+            .lock()
+            .map(|requests| requests.clone())
+            .map_err(|_| StoreError::Poisoned)
+    }
 }
 
-#[async_trait]
 impl ActiveRelationSource for FakeSource {
     type Error = StoreError;
 
-    async fn active_for_subject(
+    async fn active_relations_for_subject(
         &self,
         subject: &KeepsakeSubjectRef,
-    ) -> Result<Vec<Keepsake>, Self::Error> {
+    ) -> Result<Vec<ActiveRelation>, Self::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.fail {
             return Err(StoreError::Failed);
         }
-        Ok(self.active.get(subject).cloned().unwrap_or_default())
+        self.inner
+            .active_relations_for_subject(subject)
+            .await
+            .map_err(|_| StoreError::Failed)
+    }
+
+    async fn active_relations_for_subject_by_ids(
+        &self,
+        subject: &KeepsakeSubjectRef,
+        relation_ids: &[RelationId],
+    ) -> Result<Vec<ActiveRelation>, Self::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(StoreError::Failed);
+        }
+        self.requested_relation_ids
+            .lock()
+            .map_err(|_| StoreError::Poisoned)?
+            .push(relation_ids.to_vec());
+        self.inner
+            .active_relations_for_subject_by_ids(subject, relation_ids)
+            .await
+            .map_err(|_| StoreError::Failed)
+    }
+
+    async fn active_relations_for_subject_by_keys(
+        &self,
+        subject: &KeepsakeSubjectRef,
+        keys: &[RelationKey],
+    ) -> Result<Vec<ActiveRelation>, Self::Error> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(StoreError::Failed);
+        }
+        self.inner
+            .active_relations_for_subject_by_keys(subject, keys)
+            .await
+            .map_err(|_| StoreError::Failed)
     }
 }
 
@@ -119,16 +171,8 @@ pub fn principal_resolver_for(principal: &SubjectRef) -> TestResult<KeepsakeReso
 }
 
 fn resolver_with_subject(subject: KeepsakeSubjectRef) -> TestResult<KeepsakeResolver<FakeSource>> {
-    let relation = RelationDefinition::from_spec::<PaidPlanRelation>(fixed_time()?)?;
-    let keepsake = Keepsake::applied(
-        keepsake::__private::Uuid::from_u128(0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa),
-        subject.clone(),
-        &relation,
-        fixed_time()?,
-        BTreeMap::new(),
-    )?;
     Ok(KeepsakeResolver::new(
-        FakeSource::default().with_active(subject, keepsake),
+        FakeSource::default().with_active_for_paid_plan(subject)?,
     ))
 }
 
