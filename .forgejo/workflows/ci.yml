@@ -16,6 +16,18 @@ jobs:
     runs-on: docker
     container:
       image: node:24-bookworm
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_DB: gatekeep
+          POSTGRES_PASSWORD: gatekeep
+          POSTGRES_USER: gatekeep
+        options: >-
+          --health-cmd "pg_isready -U gatekeep -d gatekeep"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v4
 
@@ -43,3 +55,6 @@ jobs:
 
       - name: Run project gates
         run: make check
+
+      - name: Run Postgres lowering tests
+        run: TEST_DB_UP=0 DATABASE_URL=postgres://gatekeep:gatekeep@postgres:5432/gatekeep make test-db

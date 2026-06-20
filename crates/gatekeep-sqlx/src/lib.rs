@@ -9,173 +9,10 @@ use gatekeep::{
     Condition, Context, FactId, LowerError, Lowered, QueryLowering, ResidualPolicy,
     ResidualPolicyBranch, ResidualPolicyNode,
 };
-use sqlx::{Postgres, QueryBuilder};
 
-/// Postgres scalar value carried by a lowered SQL fragment.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PgValue {
-    /// Boolean bind value.
-    Bool(bool),
-    /// Signed 64-bit integer bind value.
-    I64(i64),
-    /// Text bind value.
-    Text(String),
-}
+mod fragment;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum SqlPart {
-    Text(String),
-    Bind(PgValue),
-}
-
-/// Trusted Postgres SQL plus ordered bind values.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PgFragment {
-    parts: Vec<SqlPart>,
-}
-
-impl PgFragment {
-    /// Builds a fragment from SQL owned by the application.
-    ///
-    /// Callers must not pass user-supplied text here. Dynamic values belong in
-    /// bind fragments such as [`Self::bind_i64`] and [`Self::bind_text`].
-    #[must_use]
-    pub fn trusted(sql: impl Into<String>) -> Self {
-        let sql = sql.into();
-        if sql.is_empty() {
-            Self::default()
-        } else {
-            Self {
-                parts: vec![SqlPart::Text(sql)],
-            }
-        }
-    }
-
-    /// Builds a boolean bind fragment.
-    #[must_use]
-    pub fn bind_bool(value: bool) -> Self {
-        Self::bind(PgValue::Bool(value))
-    }
-
-    /// Builds an integer bind fragment.
-    #[must_use]
-    pub fn bind_i64(value: i64) -> Self {
-        Self::bind(PgValue::I64(value))
-    }
-
-    /// Builds a text bind fragment.
-    #[must_use]
-    pub fn bind_text(value: impl Into<String>) -> Self {
-        Self::bind(PgValue::Text(value.into()))
-    }
-
-    /// Returns the ordered bind values.
-    pub fn binds(&self) -> impl Iterator<Item = &PgValue> {
-        self.parts.iter().filter_map(|part| match part {
-            SqlPart::Text(_) => None,
-            SqlPart::Bind(value) => Some(value),
-        })
-    }
-
-    /// Appends another fragment to this one.
-    pub fn push_fragment(&mut self, fragment: Self) {
-        self.parts.extend(fragment.parts);
-    }
-
-    /// Converts the fragment to Postgres placeholders (`$1`, `$2`, ...).
-    #[must_use]
-    pub fn to_postgres_sql(&self) -> String {
-        let mut sql = String::new();
-        let mut placeholders = 0usize;
-
-        for part in &self.parts {
-            match part {
-                SqlPart::Text(text) => sql.push_str(text),
-                SqlPart::Bind(_) => {
-                    placeholders += 1;
-                    sql.push('$');
-                    sql.push_str(&placeholders.to_string());
-                }
-            }
-        }
-        sql
-    }
-
-    /// Appends this fragment to a `SQLx` Postgres query builder.
-    pub fn push_to(&self, builder: &mut QueryBuilder<Postgres>) {
-        for part in &self.parts {
-            match part {
-                SqlPart::Text(text) => {
-                    builder.push(text);
-                }
-                SqlPart::Bind(value) => push_bind(builder, value),
-            }
-        }
-    }
-
-    #[must_use]
-    fn bind(value: PgValue) -> Self {
-        Self {
-            parts: vec![SqlPart::Bind(value)],
-        }
-    }
-
-    fn push_sql(&mut self, sql: impl Into<String>) {
-        let sql = sql.into();
-        if !sql.is_empty() {
-            self.parts.push(SqlPart::Text(sql));
-        }
-    }
-
-    #[must_use]
-    fn wrapped(self) -> Self {
-        let mut fragment = Self::trusted("(");
-        fragment.push_fragment(self);
-        fragment.push_sql(")");
-        fragment
-    }
-
-    #[must_use]
-    fn unary(prefix: &str, inner: Self) -> Self {
-        let mut fragment = Self::trusted(prefix);
-        fragment.push_fragment(inner.wrapped());
-        fragment
-    }
-
-    #[must_use]
-    fn binary(separator: &str, fragments: Vec<Self>) -> Self {
-        let mut iter = fragments.into_iter();
-        let Some(first) = iter.next() else {
-            return Self::trusted("FALSE");
-        };
-
-        let mut fragment = first.wrapped();
-        for next in iter {
-            fragment.push_sql(separator);
-            fragment.push_fragment(next.wrapped());
-        }
-        fragment
-    }
-
-    #[must_use]
-    fn function(name: &str, fragments: Vec<Self>) -> Self {
-        let mut fragment = Self::trusted(name);
-        fragment.push_sql("(");
-
-        let mut iter = fragments.into_iter();
-        if let Some(first) = iter.next() {
-            fragment.push_fragment(first);
-            for next in iter {
-                fragment.push_sql(", ");
-                fragment.push_fragment(next);
-            }
-        }
-
-        fragment.push_sql(")");
-        fragment
-    }
-}
+pub use fragment::{PgFragment, PgValue};
 
 /// Maps a residual fact to a trusted Postgres predicate over the candidate row.
 pub trait PgFactPredicates {
@@ -208,7 +45,7 @@ pub struct OrdinalProjection;
 
 impl<O: SqlOutcome> OutcomeProjection<O> for OrdinalProjection {
     fn constant(&self, outcome: &O) -> Result<PgFragment, LowerError> {
-        Ok(PgFragment::bind_i64(outcome.to_sql_ordinal()))
+        Ok(PgFragment::bind(outcome.to_sql_ordinal()))
     }
 }
 
@@ -499,18 +336,4 @@ fn is_true(predicate: PgFragment) -> PgFragment {
     fragment.push_fragment(predicate);
     fragment.push_sql(") IS TRUE");
     fragment
-}
-
-fn push_bind(builder: &mut QueryBuilder<Postgres>, value: &PgValue) {
-    match value {
-        PgValue::Bool(value) => {
-            builder.push_bind(*value);
-        }
-        PgValue::I64(value) => {
-            builder.push_bind(*value);
-        }
-        PgValue::Text(value) => {
-            builder.push_bind(value.clone());
-        }
-    }
 }

@@ -5,8 +5,14 @@ use gatekeep::{
     PartialFacts, Presence, QueryLowering, Residual, StaticFactId, SubjectRef, TenantId, condition,
     evaluate, partial_evaluate, policy,
 };
-use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, SqlOutcome};
-use sqlx::{Execute, Postgres, QueryBuilder};
+use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome};
+use sqlx::{
+    Execute, Postgres, QueryBuilder,
+    types::{
+        Uuid,
+        time::{Date, PrimitiveDateTime, Time},
+    },
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 enum Tier {
@@ -73,7 +79,7 @@ impl PgFactPredicates for Predicates {
             "nullable_flag" => Some(PgFragment::trusted("cases.nullable_flag")),
             "owner" => {
                 let mut fragment = PgFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(PgFragment::bind_text("subject-1"));
+                fragment.push_fragment(PgFragment::bind("subject-1"));
                 Some(fragment)
             }
             _ => None,
@@ -278,6 +284,19 @@ fn fragments_append_to_sqlx_query_builder_with_stable_bind_order() -> Result<(),
 }
 
 #[test]
+fn fragments_support_common_postgres_bind_values() -> Result<(), TestError> {
+    let values = common_bind_values()?;
+    let fragment = values_fragment(&values);
+
+    assert_eq!(
+        fragment.to_postgres_sql(),
+        "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+    );
+    assert_eq!(fragment.binds().cloned().collect::<Vec<_>>(), values);
+    Ok(())
+}
+
+#[test]
 fn negated_fact_predicate_treats_sql_null_as_absent() -> Result<(), TestError> {
     let residual = gatekeep::ResidualPolicy::Grant {
         outcome: Tier::Released,
@@ -313,12 +332,46 @@ fn empty_residual_combinators_lower_as_deny() -> Result<(), TestError> {
     Ok(())
 }
 
+fn common_bind_values() -> Result<Vec<PgValue>, TestError> {
+    let date = Date::from_ordinal_date(2026, 171).map_err(|_| TestError::InvalidTemporalValue)?;
+    let time = Time::from_hms(14, 30, 15).map_err(|_| TestError::InvalidTemporalValue)?;
+    let timestamp = PrimitiveDateTime::new(date, time);
+
+    Ok(vec![
+        true.into(),
+        7_i16.into(),
+        42_i32.into(),
+        99_i64.into(),
+        "owner".into(),
+        vec![1, 2, 3, 4].into(),
+        Uuid::from_u128(0x123e_4567_e89b_12d3_a456_4266_1417_4000).into(),
+        date.into(),
+        time.into(),
+        timestamp.into(),
+        timestamp.assume_utc().into(),
+    ])
+}
+
+fn values_fragment(values: &[PgValue]) -> PgFragment {
+    let mut fragment = PgFragment::trusted("values (");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            fragment.push_fragment(PgFragment::trusted(", "));
+        }
+        fragment.push_fragment(PgFragment::bind(value.clone()));
+    }
+    fragment.push_fragment(PgFragment::trusted(")"));
+    fragment
+}
+
 #[derive(Debug, thiserror::Error)]
 enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
     Lower(#[from] gatekeep::LowerError),
+    #[error("test temporal value should be valid")]
+    InvalidTemporalValue,
     #[error("partial evaluation unexpectedly resolved")]
     UnexpectedResolvedResidual,
     #[error("staff fact should be unlowerable")]

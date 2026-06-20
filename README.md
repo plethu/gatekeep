@@ -19,7 +19,7 @@ separate project rather than a keepsake module.
 
 Early implementation. The `gatekeep` crate ships the pure policy model,
 evaluation, partial evaluation, traces, denial reasons, and adapter traits.
-`gatekeep-sqlx` starts the Postgres lowering adapter for residual policies.
+`gatekeep-sqlx` ships a Postgres lowering adapter for residual policies.
 [`docs/SPEC.md`](docs/SPEC.md) remains the design contract while the public API
 settles.
 
@@ -91,6 +91,45 @@ assert_eq!(decision.effect, Effect::Permit(ReadTier::Full));
 Partial evaluation uses the same policy value with `PartialFacts`: mark
 request-known facts as present or absent, mark resource-level facts as unknown,
 then lower the returned residual policy in an application-owned adapter.
+
+For Postgres list queries, `gatekeep-sqlx` maps live residual facts to trusted
+row predicates and appends the lowered filter and grade projection to a
+`sqlx::QueryBuilder`:
+
+```rust
+use gatekeep::{Context, FactId, QueryLowering};
+use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer};
+
+struct CasePredicates;
+
+impl PgFactPredicates for CasePredicates {
+    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<PgFragment> {
+        match fact.as_str() {
+            "case_owner" => {
+                let mut fragment = PgFragment::trusted("cases.owner_id = ");
+                fragment.push_fragment(PgFragment::bind(cx.principal.id.clone()));
+                Some(fragment)
+            }
+            "case_region" => {
+                let mut fragment = PgFragment::trusted("cases.region_id = ");
+                fragment.push_fragment(PgFragment::bind(
+                    sqlx::types::Uuid::from_u128(0x123e_4567_e89b_12d3_a456_4266_1417_4000),
+                ));
+                Some(fragment)
+            }
+            _ => None,
+        }
+    }
+}
+
+let lowerer = PgLowerer::new(CasePredicates);
+let lowered = lowerer.lower(&residual, &cx)?;
+let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("select cases.id, ");
+
+lowered.grade.push_to(&mut query);
+query.push(" as grade from cases where ");
+lowered.filter.push_to(&mut query);
+```
 
 ## Why it exists
 

@@ -832,10 +832,9 @@ answers "is fact `f` present for this (principal, resource)?"; lowering answers
 supplies that mapping, keyed by the same stable `FactId` (§4.3):
 
 ```rust
-// backend-specific (gatekeep-sqlx); generic over the backend expression type
-pub trait FactPredicates {
-    type Expr;  // e.g. sea-query SimpleExpr in gatekeep-sqlx
-    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<Self::Expr>;
+// backend-specific (gatekeep-sqlx)
+pub trait PgFactPredicates {
+    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<PgFragment>;
 }
 ```
 
@@ -860,10 +859,12 @@ resolved away in §5.3 — the residual never re-encodes principal predicates.
 | `OrElse{primary,fallback}` | override rule below | `CASE WHEN primary_filter THEN primary_grade ELSE fallback_grade END` |
 
 `LEAST` / `GREATEST` model meet / join **only when `O` is totally ordered** — the
-common tier case, mapped to an ordinal (`Released=0 < Shared=1 < Full=2`). For a
-non-total lattice the grade is not a scalar SQL min/max, so `lower` returns
-`NonTotalGrade`; the Boolean filter is unaffected, so list *filtering* stays
-available for any `O` and only graded *projection* requires total order.
+common tier case, mapped to an ordinal (`Released=0 < Shared=1 < Full=2`).
+`gatekeep-sqlx`'s default `PgLowerer` therefore requires `O: SqlOutcome` for full
+filter-plus-grade lowering. Call `lower_filter` when only the authorized-row
+filter is needed; it works for any outcome lattice. A custom
+`OutcomeProjection` can reject full projection with `NonTotalGrade` when the
+caller chooses a runtime projection strategy.
 
 Fact predicates are normalized with `IS TRUE` so SQL `NULL` behaves like an
 absent fact. This preserves gatekeep's two-valued condition algebra: `Has(f)` is
@@ -873,22 +874,20 @@ null rows.
 **Override branches are not bulk-listed.** Per §6.3, break-glass and other
 obligation-carrying overrides are `policy::or_else` fallbacks. Lowering one into
 a list query would silently grant every matching row under a break-glass
-obligation and defeat its per-resource audit. The initial `gatekeep-sqlx`
-lowerer descends only the `primary` of a `policy::or_else` whose fallback carries
-an obligation, dropping that fallback from both filter and projection. Bulk
-access via an override needs a wider lowering result with an obligation marker
-column so every overridden row is auditable; it is not exposed until that API
-exists. A `policy::or_else` whose fallback carries no obligation lowers normally
-with a `CASE WHEN primary_filter THEN primary_grade ELSE fallback_grade END`
-projection.
+obligation and defeat its per-resource audit. The `gatekeep-sqlx` lowerer
+descends only the `primary` of a `policy::or_else` whose fallback carries an
+obligation, dropping that fallback from both filter and projection. Bulk access
+via an override needs a wider lowering result with an obligation marker column so
+every overridden row is auditable; it is not exposed until that API exists. A
+`policy::or_else` whose fallback carries no obligation lowers normally with a
+`CASE WHEN primary_filter THEN primary_grade ELSE fallback_grade END` projection.
 
 **Soundness contract (testable), mirroring §5.3.** For every candidate row `r`,
 the lowered query selects `r` iff `evaluate(policy, complete(known, facts(r)))`
-is a `Permit`, and the projected grade equals that `Permit`'s `O`. The initial
-`gatekeep-sqlx` tests cover generated SQL and sampled in-memory agreement;
-DB-backed differential tests should execute sampled rows via lowered SQL once
-the adapter grows database fixtures. Unlowerable facts fail closed
-(`LowerError`); lowering never silently widens the result set.
+is a `Permit`, and the projected grade equals that `Permit`'s `O`. The
+`gatekeep-sqlx` tests cover generated SQL, sampled in-memory agreement, and
+Docker-backed Postgres differential execution via `make test-db`. Unlowerable
+facts fail closed (`LowerError`); lowering never silently widens the result set.
 
 ## 6. The algebra
 

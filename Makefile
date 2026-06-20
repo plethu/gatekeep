@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 
 DATABASE_URL ?= postgres://gatekeep:gatekeep@localhost:55433/gatekeep
 DOCKER_COMPOSE ?= docker compose
+TEST_DB_UP ?= 1
 
 .PHONY: fmt clippy test test-db db-up db-down check clean
 
@@ -20,7 +21,10 @@ db-up:
 db-down:
 	$(DOCKER_COMPOSE) down --remove-orphans
 
-test-db: db-up
+test-db:
+ifeq ($(TEST_DB_UP),1)
+	$(MAKE) db-up
+endif
 	DATABASE_URL="$(DATABASE_URL)" cargo test -p gatekeep-sqlx --test postgres --features postgres-tests -- --ignored --test-threads=1
 
 check: fmt clippy test
