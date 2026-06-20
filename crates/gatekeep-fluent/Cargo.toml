@@ -1,0 +1,23 @@
+[package]
+name = "gatekeep-fluent"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Fluent reason catalog adapter for gatekeep"
+readme = "../../README.md"
+categories = ["authentication", "internationalization", "localization"]
+keywords = ["authorization", "policy", "authz", "fluent"]
+
+[dependencies]
+fluent-bundle.workspace = true
+gatekeep = { path = "../gatekeep", version = "0.1.0" }
+serde_json.workspace = true
+thiserror.workspace = true
+unic-langid.workspace = true
+
+[lints]
+workspace = true
