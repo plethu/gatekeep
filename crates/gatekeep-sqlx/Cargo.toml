@@ -12,6 +12,10 @@ readme = "../../README.md"
 categories = ["authentication", "database"]
 keywords = ["authorization", "policy", "authz", "sqlx"]
 
+[features]
+default = []
+postgres-tests = ["sqlx/runtime-tokio"]
+
 [dependencies]
 gatekeep = { path = "../gatekeep", version = "0.1.0" }
 sqlx.workspace = true
@@ -19,6 +23,7 @@ sqlx.workspace = true
 [dev-dependencies]
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
