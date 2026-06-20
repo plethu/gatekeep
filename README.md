@@ -93,6 +93,14 @@ For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [`axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
 examples, which resolve request facts in-process and from keepsake.
 
+`gatekeep-keepsake` resolves gatekeep facts from active keepsake relations. The
+default resolver maps the request principal to a keepsake subject, and bindings
+can target additional request-scoped subjects through `SubjectSlot` values in
+`Context::subjects`. Use that for facts attached to something other than the
+principal, such as a skill version, repository, account, or source identity. A
+missing subject slot is reported as `ResolveError::MissingSubject`, distinct
+from an unbound or unproducible fact.
+
 ## Why it exists
 
 The Rust authz ecosystem leans on external DSLs. A policy DSL is worth its

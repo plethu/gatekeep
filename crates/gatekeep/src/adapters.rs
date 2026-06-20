@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::BTreeMap, convert::Infallible};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     Decision, FactId, KnownFacts, Locale, ObligationId, PartialFacts, PolicyHash, PolicyId,
-    Presence, ResidualPolicy, SubjectRef, TenantId, Trace,
+    Presence, ResidualPolicy, SubjectRef, SubjectSlot, TenantId, Trace,
 };
 
 /// Request-scoped data passed to adapter boundaries.
@@ -16,6 +16,9 @@ pub struct Context {
     pub tenant: TenantId,
     /// Principal selected by the application before resolution.
     pub principal: SubjectRef,
+    /// Additional request-scoped subjects selected by the application.
+    #[serde(default)]
+    pub subjects: BTreeMap<SubjectSlot, SubjectRef>,
     /// Locale used by presentation adapters.
     pub locale: Locale,
     /// Optional request identifier for audit sinks.
@@ -52,6 +55,14 @@ pub enum ResolveError<E> {
     /// A required fact could not be produced or classified.
     #[error("required fact is missing: {0}")]
     MissingFact(FactId),
+    /// A required request-scoped subject was not present in the context.
+    #[error("required subject slot is missing for fact {fact}: {slot}")]
+    MissingSubject {
+        /// Fact whose binding required the subject.
+        fact: FactId,
+        /// Missing request-scoped subject slot.
+        slot: SubjectSlot,
+    },
     /// Fact resolution exceeded its deadline.
     #[error("fact resolution timed out")]
     Timeout,

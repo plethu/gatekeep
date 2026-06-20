@@ -228,6 +228,7 @@ pub fn cx() -> Result<Context, GatekeepError> {
     Ok(Context {
         tenant: TenantId::new("tenant-1")?,
         principal: SubjectRef::new("user", "subject-1")?,
+        subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-GB")?,
         request_id: None,
     })

@@ -5,7 +5,11 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use gatekeep::{Context, Fact, FactId, GatekeepError, Locale, StaticFactId, SubjectRef, TenantId};
+use std::collections::BTreeMap;
+
+use gatekeep::{
+    Context, Fact, FactId, GatekeepError, Locale, StaticFactId, SubjectRef, SubjectSlot, TenantId,
+};
 use gatekeep_keepsake::KeepsakeResolver;
 use keepsake::{
     ActiveRelation, ActiveRelationSource, ExpiryPolicy, InMemoryActiveRelations, RelationId,
@@ -76,12 +80,22 @@ impl FakeSource {
         }
     }
 
-    fn with_active_for_paid_plan(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
+    pub fn with_active_for_paid_plan(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
         self.inner.insert_active_for_spec::<PaidPlanRelation>(
             0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
             subject,
             fixed_time()?,
         )?;
+        Ok(self)
+    }
+
+    pub fn with_active_for_resource_member(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
+        self.inner
+            .insert_active_for_spec::<ResourceMemberRelation>(
+                0xbbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb,
+                subject,
+                fixed_time()?,
+            )?;
         Ok(self)
     }
 
@@ -176,6 +190,21 @@ pub fn context(tenant: &str, principal: SubjectRef) -> Result<Context, GatekeepE
     Ok(Context {
         tenant: TenantId::new(tenant)?,
         principal,
+        subjects: BTreeMap::new(),
+        locale: Locale::new("en-US")?,
+        request_id: None,
+    })
+}
+
+pub fn context_with_subjects(
+    tenant: &str,
+    principal: SubjectRef,
+    subjects: BTreeMap<SubjectSlot, SubjectRef>,
+) -> Result<Context, GatekeepError> {
+    Ok(Context {
+        tenant: TenantId::new(tenant)?,
+        principal,
+        subjects,
         locale: Locale::new("en-US")?,
         request_id: None,
     })

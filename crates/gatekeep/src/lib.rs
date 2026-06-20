@@ -37,8 +37,8 @@ pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
     ClauseLabel, Fact, FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec,
     ParamKey, PolicyHash, PolicyId, ReasonCode, RequestId, StaticClauseLabel, StaticFactId,
-    StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId, StaticTenantId,
-    SubjectRef, TenantId,
+    StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId, StaticSubjectSlot,
+    StaticTenantId, SubjectRef, SubjectSlot, TenantId,
 };
 pub use partial::{Residual, complete_residual, partial_evaluate};
 pub use policy_model::{

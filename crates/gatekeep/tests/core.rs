@@ -148,6 +148,11 @@ impl Fact for ResourceFull {
     const ID: StaticFactId = StaticFactId::new("resource_full");
 }
 
+struct Suspended;
+impl Fact for Suspended {
+    const ID: StaticFactId = StaticFactId::new("suspended");
+}
+
 struct BreakGlass;
 impl ObligationSpec for BreakGlass {
     const ID: StaticObligationId = StaticObligationId::new("break_glass");
@@ -195,6 +200,50 @@ fn grant_denial_carries_reason_metadata() -> Result<(), TestError> {
             .keys()
             .any(|key| key.as_str() == "missing_fact")
     );
+    Ok(())
+}
+
+#[test]
+fn deny_when_denies_with_configured_reason() -> Result<(), TestError> {
+    let decision = evaluate(
+        &policy::deny_when::<ReadTier>(
+            condition::has::<Suspended>(),
+            gatekeep::ReasonCode::new("suspended")?,
+        ),
+        &KnownFacts::new().with_present::<Suspended>(),
+    );
+
+    assert_eq!(decision.effect, Effect::Deny);
+    let Some(reason) = decision.denial_reason()? else {
+        return Err(TestError::Message("deny_when should expose reason"));
+    };
+    assert_eq!(reason.code.as_str(), "suspended");
+    Ok(())
+}
+
+#[test]
+fn all_preserves_ordered_deny_precedence() -> Result<(), TestError> {
+    let policy = policy::all([
+        policy::deny_when::<ReadTier>(
+            condition::has::<Suspended>(),
+            gatekeep::ReasonCode::new("suspended")?,
+        ),
+        policy::deny_when::<ReadTier>(
+            condition::has::<ResourceShared>(),
+            gatekeep::ReasonCode::new("shared")?,
+        ),
+        policy::grant(ReadTier::Full, condition::always()),
+    ]);
+    let facts = KnownFacts::new()
+        .with_present::<Suspended>()
+        .with_present::<ResourceShared>();
+
+    let decision = evaluate(&policy, &facts);
+
+    let Some(reason) = decision.denial_reason()? else {
+        return Err(TestError::Message("decision should deny"));
+    };
+    assert_eq!(reason.code.as_str(), "suspended");
     Ok(())
 }
 

@@ -153,6 +153,7 @@ owned_id!(PolicyHash, "policy_hash");
 owned_id!(PolicyId, "policy_id");
 owned_id!(ReasonCode, "reason_code");
 owned_id!(RequestId, "request_id");
+owned_id!(SubjectSlot, "subject_slot");
 owned_id!(TenantId, "tenant_id");
 
 static_id!(StaticFactId, FactId);
@@ -161,6 +162,7 @@ static_id!(StaticObligationId, ObligationId);
 static_id!(StaticParamKey, ParamKey);
 static_id!(StaticReasonCode, ReasonCode);
 static_id!(StaticRequestId, RequestId);
+static_id!(StaticSubjectSlot, SubjectSlot);
 static_id!(StaticTenantId, TenantId);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

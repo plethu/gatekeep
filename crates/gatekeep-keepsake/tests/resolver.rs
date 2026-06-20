@@ -2,7 +2,9 @@
 
 mod support;
 
-use gatekeep::{FactResolver, Presence, ResolveError};
+use std::collections::BTreeMap;
+
+use gatekeep::{FactResolver, Presence, ResolveError, SubjectSlot};
 use gatekeep_keepsake::{
     FactBinding, KeepsakeResolveError, KeepsakeResolver, PrincipalSubjectMapper, QueryPresence,
     tenant_scoped_subject,
@@ -10,8 +12,8 @@ use gatekeep_keepsake::{
 use keepsake::RelationSpec;
 use support::{
     PaidPlan, PaidPlanRelation, ResourceMember, ResourceMemberRelation, StoreError, TestResult,
-    UnboundRelation, context, fact_id, principal_resolver_for, resolver_for, resolver_for_tenant,
-    subject,
+    UnboundRelation, context, context_with_subjects, fact_id, principal_resolver_for, resolver_for,
+    resolver_for_tenant, subject,
 };
 
 #[tokio::test]
@@ -36,6 +38,52 @@ async fn decision_resolution_maps_active_relations_to_known_facts() -> TestResul
     assert_eq!(
         resolver.source().requested_relation_ids()?,
         vec![vec![PaidPlanRelation::ID, ResourceMemberRelation::ID]]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn decision_resolution_can_bind_distinct_subject_slots() -> TestResult<()> {
+    let skill_slot = SubjectSlot::new("skill-version")?;
+    let source_slot = SubjectSlot::new("purlieu-source")?;
+    let skill = subject("skill-version", "std/core@0.1.0")?;
+    let source = subject("purlieu-source", "external/std")?;
+    let resolver = KeepsakeResolver::new(
+        support::FakeSource::default()
+            .with_active_for_paid_plan(keepsake::SubjectRef::new(skill.kind(), skill.id())?)?
+            .with_active_for_resource_member(keepsake::SubjectRef::new(
+                source.kind(),
+                source.id(),
+            )?)?,
+    )
+    .with_binding(FactBinding::for_relation_spec_on_subject::<
+        PaidPlan,
+        PaidPlanRelation,
+    >(skill_slot.clone())?)
+    .with_binding(FactBinding::for_relation_spec_on_subject::<
+        ResourceMember,
+        ResourceMemberRelation,
+    >(source_slot.clone())?);
+    let cx = context_with_subjects(
+        "tenant_1",
+        subject("user", "u_1")?,
+        BTreeMap::from([(skill_slot, skill), (source_slot, source)]),
+    )?;
+
+    let facts = resolver
+        .resolve_for_decision(&[fact_id("paid_plan")?, fact_id("resource_member")?], &cx)
+        .await?;
+
+    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
+    assert_eq!(
+        facts.presence(&fact_id("resource_member")?),
+        Presence::Present
+    );
+    let mut requested = resolver.source().requested_relation_ids()?;
+    requested.sort();
+    assert_eq!(
+        requested,
+        vec![vec![PaidPlanRelation::ID], vec![ResourceMemberRelation::ID]]
     );
     Ok(())
 }
@@ -133,6 +181,29 @@ async fn missing_fact_reports_resolve_error_without_source_lookup() -> TestResul
     assert!(matches!(
         result,
         Err(ResolveError::MissingFact(fact)) if fact.as_str() == "paid_plan"
+    ));
+    assert_eq!(resolver.source().calls(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_subject_slot_reports_context_error_without_source_lookup() -> TestResult<()> {
+    let slot = SubjectSlot::new("resource")?;
+    let principal = subject("user", "u_1")?;
+    let resolver =
+        resolver_for(&principal)?.with_binding(FactBinding::for_relation_spec_on_subject::<
+            PaidPlan,
+            PaidPlanRelation,
+        >(slot.clone())?);
+
+    let result = resolver
+        .resolve_for_decision(&[fact_id("paid_plan")?], &context("tenant_1", principal)?)
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(ResolveError::MissingSubject { fact, slot: missing })
+            if fact.as_str() == "paid_plan" && missing == slot
     ));
     assert_eq!(resolver.source().calls(), 0);
     Ok(())

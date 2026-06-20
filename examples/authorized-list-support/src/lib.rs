@@ -52,6 +52,7 @@ pub fn request_context() -> Result<Context, GatekeepError> {
     Ok(Context {
         tenant: TenantId::new("tenant_1")?,
         principal: SubjectRef::new("user", "user_123")?,
+        subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-US")?,
         request_id: None,
     })

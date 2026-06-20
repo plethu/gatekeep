@@ -12,6 +12,19 @@ pub const fn deny<O>() -> Policy<O> {
     Policy::Deny
 }
 
+/// Builds a conditional denial guard.
+///
+/// The returned policy permits when `condition` is false and denies with
+/// `reason` when `condition` is true. Place these guards in `policy::all` before
+/// positive grant clauses to get ordered fail-closed precedence.
+#[must_use]
+pub fn deny_when<O: crate::Lattice>(
+    condition: Condition,
+    reason: impl IntoReasonCode,
+) -> Policy<O> {
+    grant(O::top(), crate::condition::not(condition)).reason(reason)
+}
+
 /// Builds a conditional grant policy.
 #[must_use]
 pub const fn grant<O>(outcome: O, condition: Condition) -> Policy<O> {

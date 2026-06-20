@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use gatekeep::{
     Context, Fact, FactId, FactResolver, KnownFacts, PartialFacts, Presence, ResolveError,
 };
-use keepsake::{ActiveRelation, ActiveRelationSource, RelationId, RelationSpec};
+use keepsake::{
+    ActiveRelation, ActiveRelationSource, RelationId, RelationSpec,
+    SubjectRef as KeepsakeSubjectRef,
+};
 
 use crate::{
     FactBinding, FactBindingError, KeepsakeResolveError, QueryPresence, SubjectMapper,
@@ -125,6 +128,28 @@ impl<S, M> KeepsakeResolver<S, M> {
         )
     }
 
+    /// Adds or replaces a typed binding resolved against a request-scoped
+    /// subject slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FactBindingError::Gatekeep`] if the fact marker exposes an
+    /// invalid stable id.
+    pub fn with_relation_spec_on_subject<F, R>(
+        self,
+        subject_slot: gatekeep::SubjectSlot,
+    ) -> Result<Self, FactBindingError>
+    where
+        F: Fact,
+        R: RelationSpec,
+    {
+        Ok(
+            self.with_binding(FactBinding::for_relation_spec_on_subject::<F, R>(
+                subject_slot,
+            )?),
+        )
+    }
+
     /// Returns the configured bindings keyed by fact id.
     #[must_use]
     pub const fn bindings(&self) -> &BTreeMap<FactId, FactBinding> {
@@ -158,10 +183,13 @@ where
         cx: &Context,
     ) -> Result<KnownFacts, ResolveError<Self::Error>> {
         let bindings = self.bindings_for(required)?;
-        let relation_ids = relation_ids(bindings.iter().copied());
-        let active_relations = self.active_relation_ids(cx, &relation_ids).await?;
+        let active_relations = self.active_relation_ids_by_subject(cx, &bindings).await?;
         let entries = bindings.into_iter().map(|binding| {
-            let presence = relation_presence(&active_relations, binding.relation_id);
+            let presence = relation_presence(
+                &active_relations,
+                binding.subject_slot.as_ref(),
+                binding.relation_id,
+            );
             (binding.fact.clone(), presence)
         });
         Ok(KnownFacts::from_entries(entries).map_err(KeepsakeResolveError::Gatekeep)?)
@@ -177,19 +205,23 @@ where
             .iter()
             .any(|binding| binding.query_presence == QueryPresence::Resolve);
         let active_relations = if needs_active_lookup {
-            let relation_ids = relation_ids(
-                bindings
-                    .iter()
-                    .copied()
-                    .filter(|binding| binding.query_presence == QueryPresence::Resolve),
-            );
-            self.active_relation_ids(cx, &relation_ids).await?
+            let resolved_bindings = bindings
+                .iter()
+                .copied()
+                .filter(|binding| binding.query_presence == QueryPresence::Resolve)
+                .collect::<Vec<_>>();
+            self.active_relation_ids_by_subject(cx, &resolved_bindings)
+                .await?
         } else {
             BTreeSet::new()
         };
         let entries = bindings.into_iter().map(|binding| {
             let presence = match binding.query_presence {
-                QueryPresence::Resolve => relation_presence(&active_relations, binding.relation_id),
+                QueryPresence::Resolve => relation_presence(
+                    &active_relations,
+                    binding.subject_slot.as_ref(),
+                    binding.relation_id,
+                ),
                 QueryPresence::Defer => Presence::Unknown,
             };
             (binding.fact.clone(), presence)
@@ -217,30 +249,78 @@ where
             .collect()
     }
 
-    async fn active_relation_ids(
+    async fn active_relation_ids_by_subject(
         &self,
         cx: &Context,
-        relation_ids: &[RelationId],
-    ) -> Result<BTreeSet<RelationId>, KeepsakeResolveError<S::Error>> {
-        let subject = self.subject_mapper.subject(cx)?;
-        let active_relations = self
-            .source
-            .active_relations_for_subject_by_ids(&subject, relation_ids)
-            .await
-            .map_err(KeepsakeResolveError::Source)?;
-        Ok(active_relation_ids(active_relations))
+        bindings: &[&FactBinding],
+    ) -> Result<
+        BTreeSet<(Option<gatekeep::SubjectSlot>, RelationId)>,
+        ResolveError<KeepsakeResolveError<S::Error>>,
+    > {
+        let mut grouped = BTreeMap::<Option<gatekeep::SubjectSlot>, SubjectLookup>::new();
+        for binding in bindings {
+            let subject = self
+                .subject_for_binding(cx, binding)
+                .map_err(|error| match error {
+                    SubjectLookupError::MissingSlot(slot) => ResolveError::MissingSubject {
+                        fact: binding.fact.clone(),
+                        slot,
+                    },
+                    SubjectLookupError::Keepsake(error) => {
+                        ResolveError::Backend(KeepsakeResolveError::from(error))
+                    }
+                })?;
+            grouped
+                .entry(binding.subject_slot.clone())
+                .or_insert_with(|| SubjectLookup {
+                    subject,
+                    relation_ids: BTreeSet::new(),
+                })
+                .relation_ids
+                .insert(binding.relation_id);
+        }
+
+        let mut active = BTreeSet::new();
+        for (slot, lookup) in grouped {
+            let relation_ids = lookup.relation_ids.into_iter().collect::<Vec<_>>();
+            let active_relations = self
+                .source
+                .active_relations_for_subject_by_ids(&lookup.subject, &relation_ids)
+                .await
+                .map_err(KeepsakeResolveError::Source)?;
+            for relation_id in active_relation_ids(active_relations) {
+                active.insert((slot.clone(), relation_id));
+            }
+        }
+        Ok(active)
+    }
+
+    fn subject_for_binding(
+        &self,
+        cx: &Context,
+        binding: &FactBinding,
+    ) -> Result<KeepsakeSubjectRef, SubjectLookupError> {
+        if let Some(slot) = &binding.subject_slot {
+            let Some(subject) = cx.subjects.get(slot) else {
+                return Err(SubjectLookupError::MissingSlot(slot.clone()));
+            };
+            return KeepsakeSubjectRef::new(subject.kind(), subject.id())
+                .map_err(SubjectLookupError::Keepsake);
+        }
+        self.subject_mapper
+            .subject(cx)
+            .map_err(SubjectLookupError::Keepsake)
     }
 }
 
-fn relation_ids<'binding>(
-    bindings: impl IntoIterator<Item = &'binding FactBinding>,
-) -> Vec<RelationId> {
-    bindings
-        .into_iter()
-        .map(FactBinding::relation_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+struct SubjectLookup {
+    subject: KeepsakeSubjectRef,
+    relation_ids: BTreeSet<RelationId>,
+}
+
+enum SubjectLookupError {
+    MissingSlot(gatekeep::SubjectSlot),
+    Keepsake(keepsake::KeepsakeError),
 }
 
 fn active_relation_ids(active_relations: Vec<ActiveRelation>) -> BTreeSet<RelationId> {
@@ -250,8 +330,12 @@ fn active_relation_ids(active_relations: Vec<ActiveRelation>) -> BTreeSet<Relati
         .collect()
 }
 
-fn relation_presence(active_relations: &BTreeSet<RelationId>, relation_id: RelationId) -> Presence {
-    if active_relations.contains(&relation_id) {
+fn relation_presence(
+    active_relations: &BTreeSet<(Option<gatekeep::SubjectSlot>, RelationId)>,
+    subject_slot: Option<&gatekeep::SubjectSlot>,
+    relation_id: RelationId,
+) -> Presence {
+    if active_relations.contains(&(subject_slot.cloned(), relation_id)) {
         Presence::Present
     } else {
         Presence::Absent

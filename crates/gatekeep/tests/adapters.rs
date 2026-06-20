@@ -2,9 +2,12 @@
 
 #![cfg(feature = "test")]
 
+use std::collections::BTreeMap;
+
 use gatekeep::{
-    AuditEntry, AuditSink, EffectKind, InMemoryAuditSink, KnownFacts, PolicyAnchor, PolicyHash,
-    PolicyId, SubjectRef, TenantId, condition, evaluate, policy,
+    AuditEntry, AuditSink, Context, EffectKind, InMemoryAuditSink, KnownFacts, Locale,
+    PolicyAnchor, PolicyHash, PolicyId, SubjectRef, SubjectSlot, TenantId, condition, evaluate,
+    policy,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
@@ -57,6 +60,26 @@ fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> {
     Ok(())
 }
 
+#[test]
+fn context_subject_slots_round_trip() -> Result<(), TestError> {
+    let context = Context {
+        tenant: TenantId::new("tenant_a")?,
+        principal: SubjectRef::new("user", "mari")?,
+        subjects: BTreeMap::from([(
+            SubjectSlot::new("skill-version")?,
+            SubjectRef::new("skill", "std/core@0.1.0")?,
+        )]),
+        locale: Locale::new("en-US")?,
+        request_id: None,
+    };
+
+    let encoded = serde_json::to_string(&context)?;
+    let decoded = serde_json::from_str::<Context>(&encoded)?;
+
+    assert_eq!(decoded, context);
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 enum TestError {
     #[error(transparent)]
@@ -65,4 +88,6 @@ enum TestError {
     Trace(#[from] gatekeep::TraceError),
     #[error(transparent)]
     Audit(#[from] gatekeep::InMemoryAuditError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }

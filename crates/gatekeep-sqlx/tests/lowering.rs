@@ -7,10 +7,12 @@ use gatekeep::{
 };
 #[cfg(feature = "sqlite")]
 use gatekeep_sqlx::SqliteBackend;
+#[cfg(feature = "sqlite")]
+use gatekeep_sqlx::validate_database_url_for_backend;
 #[cfg(feature = "mysql")]
 use gatekeep_sqlx::{MySqlBackend, SqlxFactPredicates, SqlxFragment, SqlxLowerer};
 use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome};
-use gatekeep_sqlx::{SqlxDriver, infer_enabled_driver_from_url, validate_database_url_for_backend};
+use gatekeep_sqlx::{SqlxDriver, infer_enabled_driver_from_url};
 #[cfg(all(feature = "sqlite", not(feature = "mysql")))]
 use gatekeep_sqlx::{SqlxFactPredicates, SqlxFragment, SqlxLowerer};
 use sqlx::{
@@ -130,6 +132,7 @@ fn cx() -> Result<Context, GatekeepError> {
     Ok(Context {
         tenant: TenantId::new("tenant-1")?,
         principal: SubjectRef::new("user", "subject-1")?,
+        subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-GB")?,
         request_id: None,
     })
@@ -485,6 +488,7 @@ fn empty_residual_combinators_lower_as_deny() -> Result<(), TestError> {
     Ok(())
 }
 
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
 fn shared_or_owner_residual() -> gatekeep::ResidualPolicy<Tier> {
     gatekeep::ResidualPolicy::Any(vec![
         gatekeep::ResidualPolicy::Grant {

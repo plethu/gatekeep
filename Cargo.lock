@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-axum"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-fluent"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fluent-bundle",
  "gatekeep",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-keepsake"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "gatekeep",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-sqlx"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gatekeep",
  "serde",
