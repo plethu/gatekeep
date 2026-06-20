@@ -11,9 +11,7 @@ carries the reasons that produced it.
 
 It is the sibling of [`keepsake`](../keepsake-rs): keepsake keeps relation
 lifecycle state — entitlements, holds, sanctions, risk flags, gates — and
-gatekeep decides what those facts permit. The two compose, but they are
-independent crates; keepsake's charter excludes authorization, so this is a
-separate project rather than a keepsake module.
+gatekeep decides what those facts permit. The two compose but stay independent crates.
 
 ## Status
 
@@ -43,96 +41,62 @@ rather than only "may this principal reach this one?".
 
 ```rust
 use gatekeep::{
-    condition, evaluate, policy, Effect, Fact, KnownFacts, Lattice, StaticFactId,
+    condition, evaluate, policy, DecisiveClause, Effect, Fact, GatekeepResult, KnownFacts,
+    Lattice, ReasonCode, StaticFactId,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-enum ReadTier {
-    Released,
+// Outcome grade: how much of a record the caller may read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+enum ReadAccess {
+    Redacted,
     Full,
 }
 
-impl Lattice for ReadTier {
-    fn meet(&self, other: &Self) -> Self {
-        if *self == Self::Released || *other == Self::Released {
-            Self::Released
-        } else {
-            Self::Full
-        }
-    }
-
-    fn join(&self, other: &Self) -> Self {
-        if *self == Self::Full || *other == Self::Full {
-            Self::Full
-        } else {
-            Self::Released
-        }
-    }
-
-    fn top() -> Self {
-        Self::Full
-    }
-
-    fn bottom() -> Self {
-        Self::Released
-    }
+impl Lattice for ReadAccess {
+    fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
+    fn join(&self, other: &Self) -> Self { (*self).max(*other) }
+    fn top() -> Self { Self::Full }
+    fn bottom() -> Self { Self::Redacted }
 }
 
-struct Staff;
+// A fact the application resolves before evaluation.
+struct CaseOwner;
 
-impl Fact for Staff {
-    const ID: StaticFactId = StaticFactId::new("staff");
+impl Fact for CaseOwner {
+    const ID: StaticFactId = StaticFactId::new("case_owner");
 }
 
-let policy = policy::grant(ReadTier::Full, condition::has::<Staff>());
-let facts = KnownFacts::new().with_present::<Staff>();
-let decision = evaluate(&policy, &facts);
+fn read_access() -> GatekeepResult<()> {
+    // "The case owner may read the full record."
+    let owner_full_read = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
+        .try_labeled("owner_full_read")?
+        .try_reason("not_case_owner")?;
 
-assert_eq!(decision.effect, Effect::Permit(ReadTier::Full));
+    // The owner is permitted, with the granted grade carried on the effect.
+    let permitted = evaluate(&owner_full_read, &KnownFacts::new().with_present::<CaseOwner>());
+    assert_eq!(permitted.effect, Effect::Permit(ReadAccess::Full));
+
+    // A non-owner is denied, and the decision explains itself instead of
+    // returning a bare "no": the facts that were missing and a stable reason
+    // code your UI or audit log can map to a message.
+    let denied = evaluate(&owner_full_read, &KnownFacts::new());
+    assert_eq!(denied.effect, Effect::Deny);
+    if let DecisiveClause::Deny { reason, unsatisfied, .. } = &denied.trace.decisive {
+        assert_eq!(reason.as_ref().map(ReasonCode::as_str), Some("not_case_owner"));
+        assert_eq!(unsatisfied.len(), 1); // the missing case_owner fact
+    }
+
+    Ok(())
+}
 ```
 
-Partial evaluation uses the same policy value with `PartialFacts`: mark
-request-known facts as present or absent, mark resource-level facts as unknown,
-then lower the returned residual policy in an application-owned adapter.
-
-For Postgres list queries, `gatekeep-sqlx` maps live residual facts to trusted
-row predicates and appends the lowered filter and grade projection to a
-`sqlx::QueryBuilder`:
-
-```rust
-use gatekeep::{Context, FactId, QueryLowering};
-use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer};
-
-struct CasePredicates;
-
-impl PgFactPredicates for CasePredicates {
-    fn predicate(&self, fact: &FactId, cx: &Context) -> Option<PgFragment> {
-        match fact.as_str() {
-            "case_owner" => {
-                let mut fragment = PgFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(PgFragment::bind(cx.principal.id()));
-                Some(fragment)
-            }
-            "case_region" => {
-                let mut fragment = PgFragment::trusted("cases.region_id = ");
-                fragment.push_fragment(PgFragment::bind(
-                    sqlx::types::Uuid::from_u128(0x123e_4567_e89b_12d3_a456_4266_1417_4000),
-                ));
-                Some(fragment)
-            }
-            _ => None,
-        }
-    }
-}
-
-let lowerer = PgLowerer::new(CasePredicates);
-let lowered = lowerer.lower(&residual, &cx)?;
-let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("select cases.id, ");
-
-lowered.grade.push_to(&mut query);
-query.push(" as grade from cases where ");
-lowered.filter.push_to(&mut query);
-```
+Partial evaluation reuses the same policy value with `PartialFacts`: mark
+request-known facts as present or absent, leave resource-level facts unknown,
+then lower the returned residual policy in an application-owned adapter. For
+Postgres list queries, `gatekeep-sqlx` maps live residual facts to trusted row
+predicates and appends a lowered filter and grade projection to a
+`sqlx::QueryBuilder`. See [`docs/SPEC.md`](docs/SPEC.md) and the `gatekeep-sqlx`
+docs for the lowering example.
 
 ## Why it exists
 
@@ -142,9 +106,6 @@ service those benefits mostly disappear and the costs stay: a second language,
 the domain serialized into entities and attributes, and typos that fail at
 runtime instead of compile time. gatekeep keeps policies in Rust and takes one
 lesson from the DSL world, reifying them as data so they stay analyzable.
-
-It is the authorization half of the story keepsake tells. Keepsake records what
-is true of a subject; gatekeep decides what that permits.
 
 ## License
 
