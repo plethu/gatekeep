@@ -1154,8 +1154,13 @@ Mirrors keepsake's `core + adapter` workspace.
 - `crates/gatekeep` — pure model, two-layer algebra, evaluator + partial
   evaluator, denial-reason codes, observer/audit/lowering/catalog traits, errors.
   Synchronous. No IO dependencies.
-- `crates/gatekeep-keepsake` — fact-source adapter resolving keepsake relations
-  (entitlements, holds, sanctions, gates) into gatekeep facts via `KeepsakeStore`.
+- `crates/gatekeep-keepsake` — fact-source adapter resolving keepsake relation
+  ids (entitlements, holds, sanctions, gates) into gatekeep facts via an async
+  `ActiveRelationSource`, with a sync `KeepsakeStore` wrapper and optional
+  `keepsake-sqlx` implementation. Subject mapping is tenant-aware by default
+  and configurable for applications that already encode tenancy in keepsake
+  subjects. Query-mode facts are either resolved from the principal or explicitly
+  deferred for row-level lowering.
 - `crates/gatekeep-fluent` — a `FluentCatalog: ReasonCatalog` (§5.4) over
   project-fluent `.ftl` bundles. Web-framework-agnostic: usable from axum, actix,
   Leptos SSR, or a CLI. Core owns the trait and the stable codes, so a gettext or

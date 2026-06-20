@@ -20,8 +20,9 @@ separate project rather than a keepsake module.
 Early implementation. The `gatekeep` crate ships the pure policy model,
 evaluation, partial evaluation, traces, denial reasons, and adapter traits.
 `gatekeep-axum` ships axum response glue, `gatekeep-fluent` ships a
-Fluent-backed denial reason catalog, and `gatekeep-sqlx` ships a Postgres
-lowering adapter for residual policies.
+Fluent-backed denial reason catalog, `gatekeep-keepsake` resolves keepsake
+relations into facts with tenant-aware subject mapping, and `gatekeep-sqlx`
+ships a Postgres lowering adapter for residual policies.
 [`docs/SPEC.md`](docs/SPEC.md) remains the design contract while the public API
 settles.
 
