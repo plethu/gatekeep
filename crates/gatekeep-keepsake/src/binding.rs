@@ -55,6 +55,36 @@ impl FactBinding {
         Self::for_relation_spec_with_query_presence::<F, R>(QueryPresence::Resolve)
     }
 
+    /// Binds a typed gatekeep fact to a typed keepsake relation that is
+    /// resolved during query preparation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FactBindingError::Gatekeep`] if the fact marker exposes an
+    /// invalid stable id.
+    pub fn resolve_relation<F, R>() -> Result<Self, FactBindingError>
+    where
+        F: Fact,
+        R: RelationSpec,
+    {
+        Self::for_relation_spec_with_query_presence::<F, R>(QueryPresence::Resolve)
+    }
+
+    /// Binds a typed gatekeep fact to a typed keepsake relation that is left
+    /// unknown during query preparation for row-level lowering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FactBindingError::Gatekeep`] if the fact marker exposes an
+    /// invalid stable id.
+    pub fn defer_relation<F, R>() -> Result<Self, FactBindingError>
+    where
+        F: Fact,
+        R: RelationSpec,
+    {
+        Self::for_relation_spec_with_query_presence::<F, R>(QueryPresence::Defer)
+    }
+
     /// Binds a typed gatekeep fact to a typed keepsake relation, with explicit
     /// query-mode behavior.
     ///

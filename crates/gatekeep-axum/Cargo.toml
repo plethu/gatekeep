@@ -17,11 +17,11 @@ axum.workspace = true
 gatekeep = { path = "../gatekeep", version = "0.1.0" }
 postcard.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
-serde_json.workspace = true
 tokio.workspace = true
 tower.workspace = true
 

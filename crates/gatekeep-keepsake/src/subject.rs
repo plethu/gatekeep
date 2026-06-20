@@ -40,6 +40,24 @@ impl SubjectMapper for PrincipalSubjectMapper {
     }
 }
 
+/// Maps a gatekeep context through [`TenantScopedSubjectMapper`].
+///
+/// # Errors
+///
+/// Returns [`KeepsakeError`] if the mapped subject is invalid.
+pub fn tenant_scoped_subject(cx: &Context) -> Result<SubjectRef, KeepsakeError> {
+    TenantScopedSubjectMapper.subject(cx)
+}
+
+/// Maps a gatekeep context through [`PrincipalSubjectMapper`].
+///
+/// # Errors
+///
+/// Returns [`KeepsakeError`] if the mapped subject is invalid.
+pub fn principal_subject(cx: &Context) -> Result<SubjectRef, KeepsakeError> {
+    PrincipalSubjectMapper.subject(cx)
+}
+
 fn tenant_principal_kind(tenant: &str, principal_kind: &str) -> String {
     format!(
         "tenant:{}:{}principal:{}:{}",

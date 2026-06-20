@@ -5,6 +5,7 @@ mod support;
 use gatekeep::{FactResolver, Presence, ResolveError};
 use gatekeep_keepsake::{
     FactBinding, KeepsakeResolveError, KeepsakeResolver, PrincipalSubjectMapper, QueryPresence,
+    tenant_scoped_subject,
 };
 use keepsake::RelationSpec;
 use support::{
@@ -169,5 +170,27 @@ fn manual_bindings_can_defer_runtime_fact_ids() -> TestResult<()> {
     assert_eq!(binding.fact().as_str(), "runtime_fact");
     assert_eq!(binding.relation_id(), UnboundRelation::ID);
     assert_eq!(binding.query_presence(), QueryPresence::Defer);
+    Ok(())
+}
+
+#[test]
+fn typed_binding_aliases_express_query_behavior() -> TestResult<()> {
+    let resolved = FactBinding::resolve_relation::<PaidPlan, PaidPlanRelation>()?;
+    let deferred = FactBinding::defer_relation::<ResourceMember, ResourceMemberRelation>()?;
+
+    assert_eq!(resolved.query_presence(), QueryPresence::Resolve);
+    assert_eq!(deferred.query_presence(), QueryPresence::Defer);
+    Ok(())
+}
+
+#[test]
+fn tenant_scoped_subject_helper_matches_default_mapper() -> TestResult<()> {
+    let principal = subject("user", "u_1")?;
+    let context = context("tenant_1", principal)?;
+
+    assert_eq!(
+        tenant_scoped_subject(&context)?,
+        support::tenant_subject("tenant_1", &subject("user", "u_1")?)?
+    );
     Ok(())
 }

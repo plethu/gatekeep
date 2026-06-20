@@ -4,14 +4,16 @@ mod support;
 
 use axum::{
     Router,
-    body::{Body, to_bytes},
+    body::Body,
     extract::State,
     http::{Request, StatusCode},
+    response::Response,
     routing::get,
 };
 use gatekeep::{KnownFacts, Policy, PolicyId, condition, policy};
 use gatekeep_axum::{
-    AuditSubjects, DenialBody, DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
+    AuditSubjects, DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
+    test_support::{DenialAssertError, ExpectedDenial, assert_denial_response},
 };
 use support::{
     Access, CaseReader, FailingAudit, RecordingAudit, RecordingObserver, ShapeAwareCatalog,
@@ -95,13 +97,27 @@ async fn hidden_denial_uses_generic_not_found_response() -> Result<(), TestError
         Err(error) => match error {},
     };
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let bytes = to_bytes(response.into_body(), usize::MAX).await?;
-    let body: DenialBody = serde_json::from_slice(&bytes)?;
-    assert_eq!(body.error, DenialError::NotFound);
-    assert_eq!(body.message, "not found");
-    assert_eq!(body.reason, None);
-    assert!(!String::from_utf8_lossy(&bytes).contains("case-read-denied"));
+    let body = assert_denial_response(
+        response,
+        ExpectedDenial::not_found()
+            .with_message("not found")
+            .without_reason(),
+    )
+    .await?;
+    assert!(!format!("{body:?}").contains("case-read-denied"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn denial_helper_rejects_extra_serialized_fields() -> Result<(), TestError> {
+    let response = Response::builder().status(StatusCode::NOT_FOUND).body(Body::from(
+        r#"{"error":"not_found","message":"not found","reason":null,"debug_reason":"case-read-denied"}"#,
+    ))?;
+
+    let error =
+        assert_denial_response(response, ExpectedDenial::not_found().without_reason()).await;
+
+    assert!(matches!(error, Err(DenialAssertError::Fields { .. })));
     Ok(())
 }
 

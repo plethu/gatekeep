@@ -59,6 +59,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic-waker"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -76,6 +82,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
  "hyper-util",
  "itoa",
  "matchit",
@@ -629,6 +636,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatekeep-example-authorized-list-support"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "gatekeep",
+ "gatekeep-axum",
+ "gatekeep-fluent",
+ "gatekeep-sqlx",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+]
+
+[[package]]
+name = "gatekeep-example-axum-authorized-list"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "gatekeep",
+ "gatekeep-axum",
+ "gatekeep-example-authorized-list-support",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "gatekeep-example-axum-keepsake-authorized-list"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "gatekeep",
+ "gatekeep-axum",
+ "gatekeep-example-authorized-list-support",
+ "gatekeep-keepsake",
+ "keepsake",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "gatekeep-fluent"
 version = "0.1.0"
 dependencies = [
@@ -808,6 +862,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "httparse"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
 name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -828,10 +888,15 @@ version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55281c53a1894c864990125767da440a4e630446785086f52523b20033b74498"
 dependencies = [
+ "atomic-waker",
  "bytes",
+ "futures-channel",
+ "futures-core",
  "http",
  "http-body",
+ "httparse",
  "httpdate",
+ "itoa",
  "pin-project-lite",
  "smallvec",
  "tokio",

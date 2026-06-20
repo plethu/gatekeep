@@ -1161,8 +1161,12 @@ Mirrors keepsake's `core + adapter` workspace.
   lookups and composes with any keepsake source that implements that read-side
   contract, including `keepsake-sqlx`. Subject mapping is tenant-aware by
   default and configurable for applications that already encode tenancy in
-  keepsake subjects. Query-mode facts are either resolved from the principal or
-  explicitly deferred for row-level lowering.
+  keepsake subjects; helper functions expose the default subject mapping without
+  requiring callers to import the mapper trait. Query-mode facts are either
+  resolved from the principal or explicitly deferred for row-level lowering, with
+  typed `with_resolved_relation` / `with_deferred_relation` aliases for the
+  common cases. Its optional `in-memory` feature re-exports keepsake's first-party
+  in-memory relation helpers for adapter tests and examples.
 - `crates/gatekeep-fluent` — a `FluentCatalog: ReasonCatalog` (§5.4) over
   project-fluent `.ftl` bundles. Web-framework-agnostic: usable from axum, actix,
   Leptos SSR, or a CLI. Core owns the trait and the stable codes, so a gettext or
@@ -1174,14 +1178,19 @@ Mirrors keepsake's `core + adapter` workspace.
   `ReasonCatalog` it is handed (typically `gatekeep-fluent`) and never renders a
   hidden denial's specific reason. The denial/reason types live in core, so this
   stays a thin, swappable adapter (a future `gatekeep-actix` reuses everything
-  but this crate).
+  but this crate). Test helpers assert serialized denial responses without each
+  axum integration test reparsing the JSON body by hand.
 - `crates/gatekeep-sqlx` — Postgres lowering adapter for residual policies:
   resource `FactId`s map to trusted row predicates, and the `QueryLowering`
   backend turns a residual (§5.5) into a `WHERE` fragment plus a grade
   expression for authorized list queries. DB-backed fact resolution follows
   after the lowering API has settled.
-- `examples/` — a billing-gate example, the send-app case-access example (§10),
-  and an authorized-list example exercising partial evaluation.
+- `examples/` — runnable authorized-list examples: `axum-authorized-list`
+  exercises localized axum denials plus SQLx residual lowering with in-process
+  facts; `axum-keepsake-authorized-list` adds keepsake-backed request-fact
+  resolution. `authorized-list-support` is a non-published helper crate shared by
+  those examples. Billing-gate or send-app-specific examples can be added later
+  when they have their own maintained integration boundary.
 
 Conventions inherited from keepsake: Rust 2024, the strict lint profile that
 denies `unwrap` / `expect` / `panic!` / `todo!` / `dbg!`, `thiserror` for typed

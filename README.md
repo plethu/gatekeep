@@ -13,17 +13,6 @@ It is the sibling of [`keepsake`](../keepsake-rs): keepsake keeps relation
 lifecycle state — entitlements, holds, sanctions, risk flags, gates — and
 gatekeep decides what those facts permit. The two compose but stay independent crates.
 
-## Status
-
-Early implementation. The `gatekeep` crate ships the pure policy model,
-evaluation, partial evaluation, traces, denial reasons, and adapter traits.
-`gatekeep-axum` ships axum response glue, `gatekeep-fluent` ships a
-Fluent-backed denial reason catalog, `gatekeep-keepsake` resolves keepsake
-relations into facts with tenant-aware subject mapping, and `gatekeep-sqlx`
-ships a Postgres lowering adapter for residual policies.
-[`docs/SPEC.md`](docs/SPEC.md) remains the design contract while the public API
-settles.
-
 ## Where it fits
 
 Use gatekeep for an in-process authorization boundary authored in Rust, by the
@@ -96,7 +85,20 @@ then lower the returned residual policy in an application-owned adapter. For
 Postgres list queries, `gatekeep-sqlx` maps live residual facts to trusted row
 predicates and appends a lowered filter and grade projection to a
 `sqlx::QueryBuilder`. See [`docs/SPEC.md`](docs/SPEC.md) and the `gatekeep-sqlx`
-docs for the lowering example.
+docs for the lowering example, or
+[`examples/axum-authorized-list`](examples/axum-authorized-list) for an axum
+flow with in-process request facts. The
+[`examples/axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
+variant resolves request facts from keepsake before lowering resource facts into
+SQL.
+
+For point authorization, resolve every required fact into `KnownFacts` and call
+`evaluate` or `Gatekeeper::authorize`. For authorized list queries, resolve
+request/session facts, leave row-scoped facts as `Unknown` in `PartialFacts`, and
+lower only the residual resource predicates. Keep data-boundary predicates such
+as tenant id, soft-delete state, or jurisdiction outside the lowered
+authorization expression; compose them as ordinary application query scope before
+or around the gatekeep filter.
 
 ## Why it exists
 

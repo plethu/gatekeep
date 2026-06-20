@@ -16,5 +16,10 @@ mod subject;
 pub use binding::{FactBinding, FactBindingError, QueryPresence};
 pub use error::KeepsakeResolveError;
 pub use keepsake::ActiveRelationSource;
+#[cfg(feature = "in-memory")]
+pub use keepsake::{ActiveRelationSeed, InMemoryActiveRelations, InMemoryActiveRelationsError};
 pub use resolver::KeepsakeResolver;
-pub use subject::{PrincipalSubjectMapper, SubjectMapper, TenantScopedSubjectMapper};
+pub use subject::{
+    PrincipalSubjectMapper, SubjectMapper, TenantScopedSubjectMapper, principal_subject,
+    tenant_scoped_subject,
+};

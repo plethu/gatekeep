@@ -74,6 +74,36 @@ impl<S, M> KeepsakeResolver<S, M> {
         self.with_relation_spec_query_presence::<F, R>(QueryPresence::Resolve)
     }
 
+    /// Adds or replaces a typed binding that is resolved during query
+    /// preparation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FactBindingError::Gatekeep`] if the fact marker exposes an
+    /// invalid stable id.
+    pub fn with_resolved_relation<F, R>(self) -> Result<Self, FactBindingError>
+    where
+        F: Fact,
+        R: RelationSpec,
+    {
+        self.with_relation_spec_query_presence::<F, R>(QueryPresence::Resolve)
+    }
+
+    /// Adds or replaces a typed binding that is deferred during query
+    /// preparation for row-level lowering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FactBindingError::Gatekeep`] if the fact marker exposes an
+    /// invalid stable id.
+    pub fn with_deferred_relation<F, R>(self) -> Result<Self, FactBindingError>
+    where
+        F: Fact,
+        R: RelationSpec,
+    {
+        self.with_relation_spec_query_presence::<F, R>(QueryPresence::Defer)
+    }
+
     /// Adds or replaces a typed binding with explicit query-mode behavior.
     ///
     /// # Errors

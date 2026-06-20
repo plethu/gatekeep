@@ -206,6 +206,8 @@ pub enum TestError {
     Axum(#[from] axum::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    DenialAssert(#[from] gatekeep_axum::test_support::DenialAssertError),
     #[error("request was unexpectedly permitted")]
     UnexpectedPermit,
     #[error("request was expected to deny")]

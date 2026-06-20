@@ -1,0 +1,23 @@
+[package]
+name = "gatekeep-example-authorized-list-support"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Shared support for gatekeep authorized-list examples"
+
+[dependencies]
+axum = { workspace = true, features = ["http1"] }
+gatekeep = { path = "../../crates/gatekeep" }
+gatekeep-axum = { path = "../../crates/gatekeep-axum" }
+gatekeep-fluent = { path = "../../crates/gatekeep-fluent" }
+gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx" }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

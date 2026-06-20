@@ -1,11 +1,8 @@
 //! Test support for keepsake resolver integration tests.
 
-use std::{
-    collections::BTreeMap,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use gatekeep::{Context, Fact, FactId, GatekeepError, Locale, StaticFactId, SubjectRef, TenantId};
@@ -80,11 +77,10 @@ impl FakeSource {
     }
 
     fn with_active_for_paid_plan(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
-        self.inner.insert_for_spec::<PaidPlanRelation>(
-            keepsake::__private::Uuid::from_u128(0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa),
+        self.inner.insert_active_for_spec::<PaidPlanRelation>(
+            0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
             subject,
             fixed_time()?,
-            BTreeMap::new(),
         )?;
         Ok(self)
     }
@@ -193,7 +189,7 @@ pub fn fact_id(value: &str) -> Result<FactId, GatekeepError> {
     FactId::new(value)
 }
 
-fn tenant_subject(
+pub fn tenant_subject(
     tenant: &str,
     principal: &SubjectRef,
 ) -> Result<KeepsakeSubjectRef, keepsake::KeepsakeError> {
