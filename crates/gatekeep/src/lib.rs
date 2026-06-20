@@ -7,6 +7,8 @@
 #![forbid(unsafe_code)]
 
 mod adapters;
+#[cfg(any(test, feature = "test"))]
+mod audit_memory;
 mod decision;
 mod evaluate;
 mod facts;
@@ -24,11 +26,13 @@ pub use adapters::{
     IdentityReasonCatalog, LowerError, Lowered, NoopAuditSink, NoopPolicyObserver, PolicyAnchor,
     PolicyObserver, QueryLowering, ReasonCatalog, ResolveError,
 };
+#[cfg(any(test, feature = "test"))]
+pub use audit_memory::{InMemoryAuditError, InMemoryAuditSink};
 pub use decision::{
     Decision, DecisionTrace, DecisiveClause, DenialReason, DenyShape, Effect, ReasonValue, Trace,
     TraceClause, TraceError,
 };
-pub use evaluate::{evaluate, evaluate_residual, required_facts};
+pub use evaluate::{evaluate, evaluate_residual, required_facts, required_residual_facts};
 pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
     ClauseLabel, Fact, FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec,

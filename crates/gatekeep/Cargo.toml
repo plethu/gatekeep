@@ -12,6 +12,10 @@ readme = "../../README.md"
 categories = ["authentication", "data-structures"]
 keywords = ["authorization", "policy", "authz", "audit"]
 
+[features]
+default = []
+test = []
+
 [dependencies]
 async-trait.workspace = true
 blake3.workspace = true

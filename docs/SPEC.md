@@ -154,7 +154,7 @@ pub struct RequestId(String);       // #[serde(transparent)] (§4.5)
 /// Subject identity owned by gatekeep core. Independent of keepsake — core never
 /// depends on it; the gatekeep-keepsake adapter maps between this and keepsake's
 /// SubjectRef.
-pub struct SubjectRef { pub kind: String, pub id: String }
+pub struct SubjectRef { kind: String, id: String }
 
 /// Type-keyed container for app request data the adapters may read.
 pub struct Extensions(/* HashMap<TypeId, Box<dyn Any + Send + Sync>> */);

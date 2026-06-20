@@ -107,7 +107,7 @@ impl PgFactPredicates for CasePredicates {
         match fact.as_str() {
             "case_owner" => {
                 let mut fragment = PgFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(PgFragment::bind(cx.principal.id.clone()));
+                fragment.push_fragment(PgFragment::bind(cx.principal.id()));
                 Some(fragment)
             }
             "case_region" => {

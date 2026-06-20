@@ -65,7 +65,7 @@ impl PgFactPredicates for Predicates {
             "nullable_flag" => Some(PgFragment::trusted("cases.nullable_flag")),
             "owner" => {
                 let mut fragment = PgFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(PgFragment::bind(cx.principal.id.clone()));
+                fragment.push_fragment(PgFragment::bind(cx.principal.id()));
                 Some(fragment)
             }
             _ => None,
@@ -223,10 +223,7 @@ pub async fn insert_cases(pool: &PgPool, cases: &[Case]) -> TestResult<()> {
 pub fn cx() -> Result<Context, GatekeepError> {
     Ok(Context {
         tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef {
-            kind: "user".to_owned(),
-            id: "subject-1".to_owned(),
-        },
+        principal: SubjectRef::new("user", "subject-1")?,
         locale: Locale::new("en-GB")?,
         request_id: None,
     })
@@ -252,7 +249,7 @@ fn facts_for(case: &Case, cx: &Context) -> Result<KnownFacts, GatekeepError> {
         (FactId::new("shared")?, presence(case.shared)),
         (
             FactId::new("owner")?,
-            presence(case.owner_id == Some(cx.principal.id.as_str())),
+            presence(case.owner_id == Some(cx.principal.id())),
         ),
         (
             FactId::new("nullable_flag")?,

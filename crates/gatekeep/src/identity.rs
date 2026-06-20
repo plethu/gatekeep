@@ -212,10 +212,48 @@ pub trait ObligationSpec {
 }
 
 /// Application-owned subject reference.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SubjectRef {
     /// Subject namespace, such as `user` or `team`.
-    pub kind: String,
+    kind: String,
     /// Subject identifier inside the namespace.
-    pub id: String,
+    id: String,
+}
+
+impl SubjectRef {
+    /// Creates a validated subject reference.
+    pub fn new(kind: impl Into<String>, id: impl Into<String>) -> GatekeepResult<Self> {
+        Ok(Self {
+            kind: validate_identifier("subject_kind", kind)?,
+            id: validate_identifier("subject_id", id)?,
+        })
+    }
+
+    /// Returns the subject namespace.
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// Returns the subject identifier inside its namespace.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl<'de> Deserialize<'de> for SubjectRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct SubjectRefRecord {
+            kind: String,
+            id: String,
+        }
+
+        let record = SubjectRefRecord::deserialize(deserializer)?;
+        Self::new(record.kind, record.id).map_err(serde::de::Error::custom)
+    }
 }

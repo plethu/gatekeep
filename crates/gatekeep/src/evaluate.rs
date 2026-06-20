@@ -48,6 +48,14 @@ pub fn required_facts<O>(policy: &Policy<O>) -> BTreeSet<FactId> {
     facts
 }
 
+#[must_use]
+/// Returns every fact that may be consulted by a residual policy.
+pub fn required_residual_facts<O>(policy: &ResidualPolicy<O>) -> BTreeSet<FactId> {
+    let mut facts = BTreeSet::new();
+    collect_residual_policy_facts(policy, &mut facts);
+    facts
+}
+
 impl<O: Serialize> Policy<O> {
     /// Computes a stable hash of the serialized policy value.
     pub fn hash(&self) -> Result<PolicyHash, postcard::Error> {
@@ -502,6 +510,25 @@ fn collect_policy_facts<O>(policy: &Policy<O>, facts: &mut BTreeSet<FactId>) {
         Policy::OrElse { primary, fallback } => {
             collect_policy_facts(primary, facts);
             collect_policy_facts(fallback, facts);
+        }
+    }
+}
+
+fn collect_residual_policy_facts<O>(policy: &ResidualPolicy<O>, facts: &mut BTreeSet<FactId>) {
+    match policy {
+        ResidualPolicy::Permit(_)
+        | ResidualPolicy::Deny
+        | ResidualPolicy::PermitWithTrace { .. }
+        | ResidualPolicy::DenyWithTrace { .. } => {}
+        ResidualPolicy::Grant { condition, .. } => collect_condition_facts(condition, facts),
+        ResidualPolicy::All(policies) | ResidualPolicy::Any(policies) => {
+            for policy in policies {
+                collect_residual_policy_facts(policy, facts);
+            }
+        }
+        ResidualPolicy::OrElse { primary, fallback } => {
+            collect_residual_policy_facts(primary, facts);
+            collect_residual_policy_facts(fallback, facts);
         }
     }
 }

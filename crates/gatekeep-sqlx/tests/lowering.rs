@@ -90,10 +90,7 @@ impl PgFactPredicates for Predicates {
 fn cx() -> Result<Context, GatekeepError> {
     Ok(Context {
         tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef {
-            kind: "user".to_owned(),
-            id: "subject-1".to_owned(),
-        },
+        principal: SubjectRef::new("user", "subject-1")?,
         locale: Locale::new("en-GB")?,
         request_id: None,
     })
