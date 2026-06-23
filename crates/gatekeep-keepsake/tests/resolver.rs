@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 
 use gatekeep::{FactResolver, Presence, ResolveError, SubjectSlot};
 use gatekeep_keepsake::{
-    FactBinding, KeepsakeResolveError, KeepsakeResolver, PrincipalSubjectMapper, QueryPresence,
-    tenant_scoped_subject,
+    FactBinding, KeepsakeResolveError, KeepsakeResolver, KeepsakeTargetError,
+    PrincipalSubjectMapper, QueryPresence, tenant_scoped_subject,
 };
-use keepsake::RelationSpec;
+use keepsake::{ActorRef, CommandContext, RelationSpec};
 use support::{
     PaidPlan, PaidPlanRelation, ResourceMember, ResourceMemberRelation, StoreError, TestResult,
     UnboundRelation, context, context_with_subjects, fact_id, principal_resolver_for, resolver_for,
@@ -38,6 +38,34 @@ async fn decision_resolution_maps_active_relations_to_known_facts() -> TestResul
     assert_eq!(
         resolver.source().requested_relation_ids()?,
         vec![vec![PaidPlanRelation::ID, ResourceMemberRelation::ID]]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn target_for_fact_matches_decision_lookup_target() -> TestResult<()> {
+    let principal = subject("user", "u_1")?;
+    let resolver = resolver_for(&principal)?
+        .with_relation_spec::<PaidPlan, PaidPlanRelation>()?
+        .with_relation_spec::<ResourceMember, ResourceMemberRelation>()?;
+    let cx = context("tenant_1", principal)?;
+
+    let target = resolver.target_for_fact(&fact_id("paid_plan")?, &cx)?;
+    let facts = resolver
+        .resolve_for_decision(&[fact_id("paid_plan")?], &cx)
+        .await?;
+
+    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
+    assert_eq!(target.fact, fact_id("paid_plan")?);
+    assert_eq!(
+        target.subject,
+        support::tenant_subject("tenant_1", &cx.principal)?
+    );
+    assert_eq!(target.relation_id, PaidPlanRelation::ID);
+    assert_eq!(target.subject_slot, None);
+    assert_eq!(
+        resolver.source().requested_relation_ids()?,
+        vec![vec![PaidPlanRelation::ID]]
     );
     Ok(())
 }
@@ -85,6 +113,33 @@ async fn decision_resolution_can_bind_distinct_subject_slots() -> TestResult<()>
         requested,
         vec![vec![PaidPlanRelation::ID], vec![ResourceMemberRelation::ID]]
     );
+    Ok(())
+}
+
+#[test]
+fn target_for_fact_resolves_request_scoped_subject_slot() -> TestResult<()> {
+    let resource_slot = SubjectSlot::new("resource")?;
+    let resource = subject("resource", "case_1")?;
+    let resolver = resolver_for(&subject("user", "u_1")?)?.with_binding(
+        FactBinding::for_relation_spec_on_subject::<ResourceMember, ResourceMemberRelation>(
+            resource_slot.clone(),
+        )?,
+    );
+    let cx = context_with_subjects(
+        "tenant_1",
+        subject("user", "u_1")?,
+        BTreeMap::from([(resource_slot.clone(), resource)]),
+    )?;
+
+    let target = resolver.target_for_fact(&fact_id("resource_member")?, &cx)?;
+
+    assert_eq!(target.fact, fact_id("resource_member")?);
+    assert_eq!(
+        target.subject,
+        keepsake::SubjectRef::new("resource", "case_1")?
+    );
+    assert_eq!(target.relation_id, ResourceMemberRelation::ID);
+    assert_eq!(target.subject_slot, Some(resource_slot));
     Ok(())
 }
 
@@ -186,6 +241,21 @@ async fn missing_fact_reports_resolve_error_without_source_lookup() -> TestResul
     Ok(())
 }
 
+#[test]
+fn target_for_fact_reports_missing_binding() -> TestResult<()> {
+    let principal = subject("user", "u_1")?;
+    let resolver = resolver_for(&principal)?;
+    let fact = fact_id("paid_plan")?;
+
+    let result = resolver.target_for_fact(&fact, &context("tenant_1", principal)?);
+
+    assert!(matches!(
+        result,
+        Err(KeepsakeTargetError::MissingBinding { fact: missing }) if missing == fact
+    ));
+    Ok(())
+}
+
 #[tokio::test]
 async fn missing_subject_slot_reports_context_error_without_source_lookup() -> TestResult<()> {
     let slot = SubjectSlot::new("resource")?;
@@ -206,6 +276,47 @@ async fn missing_subject_slot_reports_context_error_without_source_lookup() -> T
             if fact.as_str() == "paid_plan" && missing == slot
     ));
     assert_eq!(resolver.source().calls(), 0);
+    Ok(())
+}
+
+#[test]
+fn target_for_fact_reports_missing_subject_slot() -> TestResult<()> {
+    let slot = SubjectSlot::new("resource")?;
+    let principal = subject("user", "u_1")?;
+    let resolver =
+        resolver_for(&principal)?.with_binding(FactBinding::for_relation_spec_on_subject::<
+            PaidPlan,
+            PaidPlanRelation,
+        >(slot.clone())?);
+    let fact = fact_id("paid_plan")?;
+
+    let result = resolver.target_for_fact(&fact, &context("tenant_1", principal)?);
+
+    assert!(matches!(
+        result,
+        Err(KeepsakeTargetError::MissingSubjectSlot { fact: missing, slot: missing_slot })
+            if missing == fact && missing_slot == slot
+    ));
+    assert_eq!(resolver.source().calls(), 0);
+    Ok(())
+}
+
+#[test]
+fn revoke_by_subject_preserves_target_subject_and_relation() -> TestResult<()> {
+    let principal = subject("user", "u_1")?;
+    let resolver = resolver_for(&principal)?.with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
+    let cx = context("tenant_1", principal)?;
+    let target = resolver.target_for_fact(&fact_id("paid_plan")?, &cx)?;
+    let at =
+        chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")?.with_timezone(&chrono::Utc);
+    let command_context = CommandContext::new(ActorRef::new("system", "test")?);
+
+    let command = target.revoke_by_subject(at, command_context.clone());
+
+    assert_eq!(command.subject, target.subject);
+    assert_eq!(command.relation_id, target.relation_id);
+    assert_eq!(command.at, at);
+    assert_eq!(command.context, command_context);
     Ok(())
 }
 

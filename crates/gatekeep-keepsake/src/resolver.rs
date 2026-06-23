@@ -4,14 +4,11 @@ use async_trait::async_trait;
 use gatekeep::{
     Context, Fact, FactId, FactResolver, KnownFacts, PartialFacts, Presence, ResolveError,
 };
-use keepsake::{
-    ActiveRelation, ActiveRelationSource, RelationId, RelationSpec,
-    SubjectRef as KeepsakeSubjectRef,
-};
+use keepsake::{ActiveRelation, ActiveRelationSource, RelationId, RelationSpec};
 
 use crate::{
-    FactBinding, FactBindingError, KeepsakeResolveError, QueryPresence, SubjectMapper,
-    TenantScopedSubjectMapper,
+    FactBinding, FactBindingError, KeepsakeRelationTarget, KeepsakeResolveError,
+    KeepsakeTargetError, QueryPresence, SubjectMapper, TenantScopedSubjectMapper,
 };
 
 /// Resolves gatekeep facts from active keepsake relations for the principal.
@@ -169,6 +166,89 @@ impl<S, M> KeepsakeResolver<S, M> {
     }
 }
 
+impl<S, M> KeepsakeResolver<S, M>
+where
+    M: SubjectMapper,
+{
+    /// Resolves one binding into the keepsake subject/relation target used for lookups.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeepsakeTargetError::MissingSubjectSlot`] when the binding
+    /// targets a request-scoped subject absent from the context, or
+    /// [`KeepsakeTargetError::Subject`] when keepsake rejects the mapped subject.
+    pub fn target_for_binding(
+        &self,
+        binding: &FactBinding,
+        cx: &Context,
+    ) -> Result<KeepsakeRelationTarget, KeepsakeTargetError> {
+        let subject = if let Some(slot) = &binding.subject_slot {
+            let Some(subject) = cx.subjects.get(slot) else {
+                return Err(KeepsakeTargetError::MissingSubjectSlot {
+                    fact: binding.fact.clone(),
+                    slot: slot.clone(),
+                });
+            };
+            keepsake::SubjectRef::new(subject.kind(), subject.id()).map_err(|source| {
+                KeepsakeTargetError::Subject {
+                    fact: binding.fact.clone(),
+                    source,
+                }
+            })?
+        } else {
+            self.subject_mapper
+                .subject(cx)
+                .map_err(|source| KeepsakeTargetError::Subject {
+                    fact: binding.fact.clone(),
+                    source,
+                })?
+        };
+
+        Ok(KeepsakeRelationTarget {
+            fact: binding.fact.clone(),
+            subject,
+            relation_id: binding.relation_id,
+            subject_slot: binding.subject_slot.clone(),
+        })
+    }
+
+    /// Resolves a configured fact id into its keepsake subject/relation target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeepsakeTargetError::MissingBinding`] when the fact has no
+    /// configured binding. Also returns the subject-resolution errors documented
+    /// by [`Self::target_for_binding`].
+    pub fn target_for_fact(
+        &self,
+        fact: &FactId,
+        cx: &Context,
+    ) -> Result<KeepsakeRelationTarget, KeepsakeTargetError> {
+        let binding = self
+            .bindings
+            .get(fact)
+            .ok_or_else(|| KeepsakeTargetError::MissingBinding { fact: fact.clone() })?;
+        self.target_for_binding(binding, cx)
+    }
+
+    /// Resolves configured fact ids into keepsake subject/relation targets.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`KeepsakeTargetError`] encountered while resolving the
+    /// requested facts.
+    pub fn targets_for_facts(
+        &self,
+        facts: &[FactId],
+        cx: &Context,
+    ) -> Result<Vec<KeepsakeRelationTarget>, KeepsakeTargetError> {
+        facts
+            .iter()
+            .map(|fact| self.target_for_fact(fact, cx))
+            .collect()
+    }
+}
+
 #[async_trait]
 impl<S, M> FactResolver for KeepsakeResolver<S, M>
 where
@@ -259,25 +339,25 @@ where
     > {
         let mut grouped = BTreeMap::<Option<gatekeep::SubjectSlot>, SubjectLookup>::new();
         for binding in bindings {
-            let subject = self
-                .subject_for_binding(cx, binding)
+            let target = self
+                .target_for_binding(binding, cx)
                 .map_err(|error| match error {
-                    SubjectLookupError::MissingSlot(slot) => ResolveError::MissingSubject {
-                        fact: binding.fact.clone(),
-                        slot,
-                    },
-                    SubjectLookupError::Keepsake(error) => {
-                        ResolveError::Backend(KeepsakeResolveError::from(error))
+                    KeepsakeTargetError::MissingBinding { fact } => ResolveError::MissingFact(fact),
+                    KeepsakeTargetError::MissingSubjectSlot { fact, slot } => {
+                        ResolveError::MissingSubject { fact, slot }
+                    }
+                    KeepsakeTargetError::Subject { source, .. } => {
+                        ResolveError::Backend(KeepsakeResolveError::from(source))
                     }
                 })?;
             grouped
-                .entry(binding.subject_slot.clone())
+                .entry(target.subject_slot)
                 .or_insert_with(|| SubjectLookup {
-                    subject,
+                    subject: target.subject,
                     relation_ids: BTreeSet::new(),
                 })
                 .relation_ids
-                .insert(binding.relation_id);
+                .insert(target.relation_id);
         }
 
         let mut active = BTreeSet::new();
@@ -294,33 +374,11 @@ where
         }
         Ok(active)
     }
-
-    fn subject_for_binding(
-        &self,
-        cx: &Context,
-        binding: &FactBinding,
-    ) -> Result<KeepsakeSubjectRef, SubjectLookupError> {
-        if let Some(slot) = &binding.subject_slot {
-            let Some(subject) = cx.subjects.get(slot) else {
-                return Err(SubjectLookupError::MissingSlot(slot.clone()));
-            };
-            return KeepsakeSubjectRef::new(subject.kind(), subject.id())
-                .map_err(SubjectLookupError::Keepsake);
-        }
-        self.subject_mapper
-            .subject(cx)
-            .map_err(SubjectLookupError::Keepsake)
-    }
 }
 
 struct SubjectLookup {
-    subject: KeepsakeSubjectRef,
+    subject: keepsake::SubjectRef,
     relation_ids: BTreeSet<RelationId>,
-}
-
-enum SubjectLookupError {
-    MissingSlot(gatekeep::SubjectSlot),
-    Keepsake(keepsake::KeepsakeError),
 }
 
 fn active_relation_ids(active_relations: Vec<ActiveRelation>) -> BTreeSet<RelationId> {

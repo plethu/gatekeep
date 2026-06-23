@@ -101,6 +101,13 @@ principal, such as a skill version, repository, account, or source identity. A
 missing subject slot is reported as `ResolveError::MissingSubject`, distinct
 from an unbound or unproducible fact.
 
+The resolver can also expose the same `(SubjectRef, RelationId)` target it uses
+for reads through `target_for_fact` and `targets_for_facts`. Lifecycle code can
+turn that target into a keepsake `RevokeBySubject` command without taking on a
+SQLx dependency. `KeepsakeResolver<S>` intentionally stays generic over
+`S: ActiveRelationSource`; use keepsake's `DynActiveRelationSource` at
+application composition boundaries when runtime erasure is needed.
+
 ## Why it exists
 
 The Rust authz ecosystem leans on external DSLs. A policy DSL is worth its

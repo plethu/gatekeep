@@ -12,14 +12,16 @@ mod binding;
 mod error;
 mod resolver;
 mod subject;
+mod target;
 
 pub use binding::{FactBinding, FactBindingError, QueryPresence};
-pub use error::KeepsakeResolveError;
-pub use keepsake::ActiveRelationSource;
+pub use error::{KeepsakeResolveError, KeepsakeTargetError};
 #[cfg(feature = "in-memory")]
 pub use keepsake::{ActiveRelationSeed, InMemoryActiveRelations, InMemoryActiveRelationsError};
+pub use keepsake::{ActiveRelationSource, DynActiveRelationSource};
 pub use resolver::KeepsakeResolver;
 pub use subject::{
     PrincipalSubjectMapper, SubjectMapper, TenantScopedSubjectMapper, principal_subject,
     tenant_scoped_subject,
 };
+pub use target::KeepsakeRelationTarget;

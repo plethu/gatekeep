@@ -36,6 +36,46 @@ pub trait GatekeepSqlxBackend: Clone + Copy + core::fmt::Debug + Send + Sync + '
     const GRADE_FUNCTION_PROPAGATES_NULL: bool;
 }
 
+macro_rules! push_sqlx_bind {
+    ($builder:expr, $value:expr) => {
+        match $value {
+            SqlxValue::Bool(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::I16(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::I32(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::I64(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::Text(value) => {
+                $builder.push_bind(value.clone());
+            }
+            SqlxValue::Bytes(value) => {
+                $builder.push_bind(value.clone());
+            }
+            SqlxValue::Uuid(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::Date(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::Time(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::Timestamp(value) => {
+                $builder.push_bind(*value);
+            }
+            SqlxValue::TimestampTz(value) => {
+                $builder.push_bind(*value);
+            }
+        }
+    };
+}
+
 /// Postgres backend marker.
 #[cfg(feature = "postgres")]
 #[derive(Clone, Copy, Debug)]
@@ -57,41 +97,7 @@ impl GatekeepSqlxBackend for PostgresBackend {
     }
 
     fn push_bind(builder: &mut QueryBuilder<Self::Database>, value: &SqlxValue) {
-        match value {
-            SqlxValue::Bool(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I16(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I32(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I64(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Text(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Bytes(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Uuid(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Date(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Time(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Timestamp(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::TimestampTz(value) => {
-                builder.push_bind(*value);
-            }
-        }
+        push_sqlx_bind!(builder, value);
     }
 }
 
@@ -115,41 +121,7 @@ impl GatekeepSqlxBackend for SqliteBackend {
     }
 
     fn push_bind(builder: &mut QueryBuilder<Self::Database>, value: &SqlxValue) {
-        match value {
-            SqlxValue::Bool(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I16(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I32(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I64(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Text(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Bytes(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Uuid(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Date(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Time(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Timestamp(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::TimestampTz(value) => {
-                builder.push_bind(*value);
-            }
-        }
+        push_sqlx_bind!(builder, value);
     }
 }
 
@@ -173,41 +145,7 @@ impl GatekeepSqlxBackend for MySqlBackend {
     }
 
     fn push_bind(builder: &mut QueryBuilder<Self::Database>, value: &SqlxValue) {
-        match value {
-            SqlxValue::Bool(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I16(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I32(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::I64(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Text(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Bytes(value) => {
-                builder.push_bind(value.clone());
-            }
-            SqlxValue::Uuid(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Date(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Time(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::Timestamp(value) => {
-                builder.push_bind(*value);
-            }
-            SqlxValue::TimestampTz(value) => {
-                builder.push_bind(*value);
-            }
-        }
+        push_sqlx_bind!(builder, value);
     }
 }
 

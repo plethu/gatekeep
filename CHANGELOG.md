@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### `gatekeep-sqlx`
+
+- Deduplicated shared SQLx bind dispatch across Postgres, SQLite, and MySQL
+  backend markers while keeping dialect-specific placeholders and grade
+  functions explicit.
+
+### `gatekeep-keepsake`
+
+- Updated the keepsake dependency to `0.6.0`.
+- Added `KeepsakeRelationTarget` and target resolver helpers so lifecycle writes
+  can reuse the same subject/relation mapping as authorization reads.
+- Re-exported keepsake's `DynActiveRelationSource` for application composition
+  boundaries while keeping `KeepsakeResolver<S>` generic over
+  `ActiveRelationSource`.
+
 ## [0.2.0] — 2026-06-20
 
 ### `gatekeep-sqlx`

@@ -698,6 +698,7 @@ name = "gatekeep-keepsake"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "gatekeep",
  "keepsake",
  "thiserror",
@@ -1092,7 +1093,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "serde",
