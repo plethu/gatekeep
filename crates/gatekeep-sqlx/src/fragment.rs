@@ -424,7 +424,7 @@ impl<B> SqlxFragment<B> {
     }
 
     #[must_use]
-    pub(crate) fn binary(separator: &str, fragments: Vec<Self>) -> Self {
+    pub(crate) fn binary(separator: &str, fragments: impl IntoIterator<Item = Self>) -> Self {
         let mut iter = fragments.into_iter();
         let Some(first) = iter.next() else {
             return Self::trusted("FALSE");
@@ -439,7 +439,7 @@ impl<B> SqlxFragment<B> {
     }
 
     #[must_use]
-    pub(crate) fn function(name: &str, fragments: Vec<Self>) -> Self {
+    pub(crate) fn function(name: &str, fragments: impl IntoIterator<Item = Self>) -> Self {
         let mut fragment = Self::trusted(name);
         fragment.push_sql("(");
 

@@ -22,8 +22,40 @@ pub enum Presence {
 struct Facts(BTreeMap<FactId, (Presence, Option<TraceValue>)>);
 
 impl Facts {
+    fn from_entries(entries: impl IntoIterator<Item = (FactId, Presence)>) -> Self {
+        let mut facts = Self::default();
+        for (fact, presence) in entries {
+            facts.insert(fact, presence, None);
+        }
+        facts
+    }
+
+    fn try_from_known_entries(
+        entries: impl IntoIterator<Item = (FactId, Presence)>,
+    ) -> GatekeepResult<Self> {
+        let mut facts = Self::default();
+        for (fact, presence) in entries {
+            facts.try_insert_known(fact, presence)?;
+        }
+        Ok(facts)
+    }
+
     fn insert(&mut self, fact: FactId, presence: Presence, value: Option<TraceValue>) {
         self.0.insert(fact, (presence, value));
+    }
+
+    fn insert_typed<F: Fact>(&mut self, presence: Presence) {
+        self.insert(FactId::from_trusted(F::ID.as_str()), presence, None);
+    }
+
+    fn try_insert_known(&mut self, fact: FactId, presence: Presence) -> GatekeepResult<()> {
+        if presence == Presence::Unknown {
+            return Err(GatekeepError::InvalidPolicyRecord {
+                reason: "known facts cannot contain unknown presence",
+            });
+        }
+        self.insert(fact, presence, None);
+        Ok(())
     }
 
     fn presence(&self, fact: &FactId) -> Presence {
@@ -54,57 +86,36 @@ impl KnownFacts {
     pub fn from_entries(
         entries: impl IntoIterator<Item = (FactId, Presence)>,
     ) -> GatekeepResult<Self> {
-        let mut facts = Facts::default();
-        for (fact, presence) in entries {
-            if presence == Presence::Unknown {
-                return Err(GatekeepError::InvalidPolicyRecord {
-                    reason: "known facts cannot contain unknown presence",
-                });
-            }
-            facts.insert(fact, presence, None);
-        }
-        Ok(Self(facts))
+        Facts::try_from_known_entries(entries).map(Self)
     }
 
     pub(crate) fn from_known_entries(
         entries: impl IntoIterator<Item = (FactId, Presence)>,
     ) -> Self {
-        let mut facts = Facts::default();
-        for (fact, presence) in entries {
-            if presence != Presence::Unknown {
-                facts.insert(fact, presence, None);
-            }
-        }
-        Self(facts)
+        Self(Facts::from_entries(
+            entries
+                .into_iter()
+                .filter(|(_fact, presence)| *presence != Presence::Unknown),
+        ))
     }
 
     /// Marks a typed fact as present.
     #[must_use]
     pub fn with_present<F: Fact>(mut self) -> Self {
-        self.0.insert(
-            FactId::from_trusted(F::ID.as_str()),
-            Presence::Present,
-            None,
-        );
+        self.0.insert_typed::<F>(Presence::Present);
         self
     }
 
     /// Marks a typed fact as absent.
     #[must_use]
     pub fn with_absent<F: Fact>(mut self) -> Self {
-        self.0
-            .insert(FactId::from_trusted(F::ID.as_str()), Presence::Absent, None);
+        self.0.insert_typed::<F>(Presence::Absent);
         self
     }
 
     /// Adds a runtime fact, rejecting `Presence::Unknown`.
     pub fn try_with_fact(mut self, fact: FactId, presence: Presence) -> GatekeepResult<Self> {
-        if presence == Presence::Unknown {
-            return Err(GatekeepError::InvalidPolicyRecord {
-                reason: "known facts cannot contain unknown presence",
-            });
-        }
-        self.0.insert(fact, presence, None);
+        self.0.try_insert_known(fact, presence)?;
         Ok(self)
     }
 
@@ -145,40 +156,27 @@ impl PartialFacts {
 
     /// Builds partial facts from explicit entries.
     pub fn from_entries(entries: impl IntoIterator<Item = (FactId, Presence)>) -> Self {
-        let mut facts = Facts::default();
-        for (fact, presence) in entries {
-            facts.insert(fact, presence, None);
-        }
-        Self(facts)
+        Self(Facts::from_entries(entries))
     }
 
     /// Marks a typed fact as present.
     #[must_use]
     pub fn with_present<F: Fact>(mut self) -> Self {
-        self.0.insert(
-            FactId::from_trusted(F::ID.as_str()),
-            Presence::Present,
-            None,
-        );
+        self.0.insert_typed::<F>(Presence::Present);
         self
     }
 
     /// Marks a typed fact as absent.
     #[must_use]
     pub fn with_absent<F: Fact>(mut self) -> Self {
-        self.0
-            .insert(FactId::from_trusted(F::ID.as_str()), Presence::Absent, None);
+        self.0.insert_typed::<F>(Presence::Absent);
         self
     }
 
     /// Marks a typed fact as unknown for query lowering.
     #[must_use]
     pub fn with_unknown<F: Fact>(mut self) -> Self {
-        self.0.insert(
-            FactId::from_trusted(F::ID.as_str()),
-            Presence::Unknown,
-            None,
-        );
+        self.0.insert_typed::<F>(Presence::Unknown);
         self
     }
 
@@ -199,5 +197,27 @@ impl PartialFacts {
         self.0
             .iter()
             .filter(|(_fact, presence)| *presence != Presence::Unknown)
+    }
+}
+
+impl Extend<(FactId, Presence)> for PartialFacts {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = (FactId, Presence)>,
+    {
+        for (fact, presence) in iter {
+            self.0.insert(fact, presence, None);
+        }
+    }
+}
+
+impl FromIterator<(FactId, Presence)> for PartialFacts {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (FactId, Presence)>,
+    {
+        let mut facts = Self::new();
+        facts.extend(iter);
+        facts
     }
 }

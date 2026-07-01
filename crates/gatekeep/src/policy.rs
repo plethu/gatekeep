@@ -1,4 +1,7 @@
-use crate::{ClauseLabel, Condition, GatekeepResult, ObligationSpec, Policy, ReasonCode};
+use crate::{
+    ClauseLabel, Condition, DenyShape, GatekeepResult, ObligationId, ObligationSpec, Policy,
+    ReasonCode,
+};
 
 /// Builds an unconditional permit policy.
 #[must_use]
@@ -32,9 +35,97 @@ pub const fn grant<O>(outcome: O, condition: Condition) -> Policy<O> {
         outcome,
         condition,
         label: None,
-        deny_shape: crate::DenyShape::Forbidden,
+        deny_shape: DenyShape::Forbidden,
         obligations: Vec::new(),
         reason: None,
+    }
+}
+
+/// Builds a grant-only policy builder.
+///
+/// Unlike [`Policy::labeled`], [`Policy::hidden`], [`Policy::reason`], and
+/// [`Policy::with_obligation`], these methods are only available on grant
+/// clauses and cannot silently no-op on other policy variants.
+#[must_use]
+pub const fn grant_clause<O>(outcome: O, condition: Condition) -> GrantPolicy<O> {
+    GrantPolicy {
+        outcome,
+        condition,
+        label: None,
+        deny_shape: DenyShape::Forbidden,
+        obligations: Vec::new(),
+        reason: None,
+    }
+}
+
+/// Grant-only policy builder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPolicy<O> {
+    outcome: O,
+    condition: Condition,
+    label: Option<ClauseLabel>,
+    deny_shape: DenyShape,
+    obligations: Vec<ObligationId>,
+    reason: Option<ReasonCode>,
+}
+
+impl<O> GrantPolicy<O> {
+    /// Converts this grant builder into a policy.
+    #[must_use]
+    pub fn into_policy(self) -> Policy<O> {
+        Policy::Grant {
+            outcome: self.outcome,
+            condition: self.condition,
+            label: self.label,
+            deny_shape: self.deny_shape,
+            obligations: self.obligations,
+            reason: self.reason,
+        }
+    }
+
+    /// Adds a label to this grant.
+    #[must_use]
+    pub fn labeled(mut self, label: impl IntoLabel) -> Self {
+        self.label = Some(label.into_label());
+        self
+    }
+
+    /// Tries to add a validated label to this grant.
+    pub fn try_labeled(self, label: impl Into<String>) -> GatekeepResult<Self> {
+        Ok(self.labeled(ClauseLabel::new(label)?))
+    }
+
+    /// Marks this grant's denial as hidden.
+    #[must_use]
+    pub const fn hidden(mut self) -> Self {
+        self.deny_shape = DenyShape::Hidden;
+        self
+    }
+
+    /// Adds a reason code to this grant's denial.
+    #[must_use]
+    pub fn reason(mut self, reason: impl IntoReasonCode) -> Self {
+        self.reason = Some(reason.into_reason_code());
+        self
+    }
+
+    /// Tries to add a validated reason code to this grant's denial.
+    pub fn try_reason(self, reason: impl Into<String>) -> GatekeepResult<Self> {
+        Ok(self.reason(ReasonCode::new(reason)?))
+    }
+
+    /// Adds a typed obligation to this grant's permit result.
+    #[must_use]
+    pub fn with_obligation<S: ObligationSpec>(mut self) -> Self {
+        self.obligations
+            .push(ObligationId::from_trusted(S::ID.as_str()));
+        self
+    }
+}
+
+impl<O> From<GrantPolicy<O>> for Policy<O> {
+    fn from(grant: GrantPolicy<O>) -> Self {
+        grant.into_policy()
     }
 }
 
