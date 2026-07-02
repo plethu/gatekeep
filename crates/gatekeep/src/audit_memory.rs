@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use thiserror::Error;
 
 use crate::{AuditEntry, AuditSink};
@@ -30,10 +31,11 @@ impl InMemoryAuditSink {
     }
 }
 
+#[async_trait]
 impl AuditSink for InMemoryAuditSink {
     type Error = InMemoryAuditError;
 
-    fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
+    async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
         self.entries
             .lock()
             .map_err(|_| InMemoryAuditError::Poisoned)?

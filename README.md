@@ -87,6 +87,26 @@ appends a lowered filter and grade projection to a `sqlx::QueryBuilder`.
 Postgres is the default backend; SQLite and MySQL are available behind feature
 flags.
 
+For durable decision audit, configure an async `AuditSink`. `gatekeep-sqlx`
+provides `SqlxDecisionAuditRepository` plus Postgres, SQLite, and MySQL aliases.
+Run the audit migration for your backend, pass the repository to
+`Gatekeeper::with_audit_sink`, and the Axum adapter will await the audit write
+before returning permit or deny. The SQL schema stores the decision row, consulted
+facts, obligations, request subjects, reason parameters, and an outbox row for
+export workers.
+
+```rust
+use gatekeep::Gatekeeper;
+use gatekeep_sqlx::PgDecisionAuditRepository;
+
+let audit = PgDecisionAuditRepository::new(pg_pool.clone());
+let gatekeeper = Gatekeeper::new(policy).with_audit_sink(audit);
+```
+
+Use the matching migration under `gatekeep-sqlx/migrations/{postgres,sqlite,mysql}`.
+Export workers can page `gatekeep_audit_outbox` by id and transform the stored
+`AuditEntry` payload for Kafka, Restate, S3, or warehouse ingestion.
+
 For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [docs.rs](https://docs.rs/gatekeep-sqlx) and the
 [`axum-authorized-list`](examples/axum-authorized-list) and

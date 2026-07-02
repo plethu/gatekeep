@@ -15,10 +15,15 @@ use gatekeep_axum::{
     AuditSubjects, DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
     test_support::{DenialAssertError, ExpectedDenial, assert_denial_response},
 };
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use support::{
     Access, CaseReader, FailingAudit, RecordingAudit, RecordingObserver, ShapeAwareCatalog,
     StaticCatalog, StaticResolver, TestError, context, hidden_read_policy, read_policy,
 };
+use tokio::sync::oneshot;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -200,6 +205,57 @@ async fn observer_runs_only_after_audit_succeeds() -> Result<(), TestError> {
     };
     assert!(observer.summaries()?.is_empty());
     Ok(())
+}
+
+#[tokio::test]
+async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestError> {
+    let (release, wait_for_release) = oneshot::channel();
+    let completed = Arc::new(AtomicBool::new(false));
+    let audit = BlockingAudit {
+        release: tokio::sync::Mutex::new(Some(wait_for_release)),
+        completed: Arc::clone(&completed),
+    };
+    let gatekeeper = Gatekeeper::new(StaticResolver {
+        facts: KnownFacts::new().with_present::<CaseReader>(),
+    })
+    .with_audit_sink(audit);
+    let policy_id = PolicyId::new("case_read")?;
+    let policy = read_policy()?;
+    let context = context()?;
+
+    let task = tokio::spawn(async move { gatekeeper.authorize(policy_id, &policy, context).await });
+
+    tokio::task::yield_now().await;
+    assert!(!task.is_finished());
+    assert!(!completed.load(Ordering::SeqCst));
+
+    release
+        .send(())
+        .map_err(|()| TestError::AuditReleaseDropped)?;
+    let authorized = task.await.map_err(TestError::Join)??;
+
+    assert_eq!(authorized.outcome, Access::Full);
+    assert!(completed.load(Ordering::SeqCst));
+    Ok(())
+}
+
+struct BlockingAudit {
+    release: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
+    completed: Arc<AtomicBool>,
+}
+
+#[async_trait::async_trait]
+impl gatekeep::AuditSink for BlockingAudit {
+    type Error = support::RecordingError;
+
+    async fn record(&self, _entry: &gatekeep::AuditEntry) -> Result<(), Self::Error> {
+        let release = self.release.lock().await.take();
+        if let Some(release) = release {
+            let _ = release.await;
+        }
+        self.completed.store(true, Ordering::SeqCst);
+        Ok(())
+    }
 }
 
 #[derive(Clone)]

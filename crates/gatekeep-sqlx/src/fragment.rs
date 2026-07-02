@@ -493,6 +493,7 @@ where
 }
 
 /// Postgres scalar value carried by a lowered SQL fragment.
+#[cfg(feature = "postgres")]
 pub type PgValue = SqlxValue;
 
 /// Trusted Postgres SQL plus ordered bind values.

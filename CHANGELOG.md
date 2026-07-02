@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### `gatekeep`
+
+- Changed `AuditSink::record` to async so durable audit sinks can perform IO
+  without hiding persistence behind a synchronous trait.
+- Expanded `AuditEntry` with request id, request subjects, consulted facts,
+  decisive clause, and structured denial reason data.
+
+### `gatekeep-axum`
+
+- Await audit persistence before returning permit or deny decisions.
+
+### `gatekeep-sqlx`
+
+- Added `SqlxDecisionAuditRepository` and backend aliases for durable,
+  queryable decision audit storage.
+- Added SQL migrations for decision audit rows, consulted facts, obligations,
+  request subjects, reason params, and outbox rows.
+
 ## [0.4.0] — 2026-06-23
 
 ### `gatekeep-sqlx`

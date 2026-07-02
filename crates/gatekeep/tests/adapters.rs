@@ -34,26 +34,31 @@ impl gatekeep::Lattice for Access {
     }
 }
 
-#[test]
-fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> {
+#[tokio::test]
+async fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> {
     let sink = InMemoryAuditSink::default();
     let decision = evaluate(
         &policy::grant(Access::Full, condition::always()),
         &KnownFacts::new(),
     );
     let entry = AuditEntry {
+        request_id: None,
         anchor: PolicyAnchor {
             policy_id: PolicyId::new("case_read")?,
             policy_hash: PolicyHash::new("hash")?,
         },
-        trace: decision.to_trace()?,
         effect: EffectKind::from(&decision),
-        obligations: decision.obligations,
+        obligations: decision.obligations.clone(),
+        consulted: decision.trace.consulted.clone(),
+        decisive: decision.to_trace()?.decisive,
+        denial_reason: decision.denial_reason()?,
+        trace: decision.to_trace()?,
         tenant: Some(TenantId::new("tenant_a")?),
         principal: Some(SubjectRef::new("user", "mari")?),
+        subjects: BTreeMap::new(),
     };
 
-    sink.record(&entry)?;
+    sink.record(&entry).await?;
     let entries = sink.entries()?;
 
     assert_eq!(entries, vec![entry]);

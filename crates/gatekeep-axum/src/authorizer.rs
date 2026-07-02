@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use gatekeep::{
     AuditEntry, AuditSink, Context, Decision, DecisionSummary, DecisiveClause, DenyShape, Effect,
@@ -165,6 +165,7 @@ where
         let decision = evaluate(policy, &facts);
 
         self.observe_and_audit(&anchor, &decision, &context)
+            .await
             .map_err(GatekeepRejection::from_error)?;
 
         match decision.effect.clone() {
@@ -185,14 +186,14 @@ where
         }
     }
 
-    fn observe_and_audit<O>(
+    async fn observe_and_audit<O>(
         &self,
         anchor: &PolicyAnchor,
         decision: &Decision<O>,
         context: &Context,
     ) -> Result<(), GatekeepAxumError<R::Error, A::Error>>
     where
-        O: Serialize + Clone,
+        O: Serialize + Clone + Sync,
     {
         let (tenant, principal) = match self.audit_subjects {
             AuditSubjects::Omit => (None, None),
@@ -201,24 +202,34 @@ where
                 Some(context.principal.clone()),
             ),
         };
+        let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
         let entry = AuditEntry {
+            request_id: context.request_id.clone(),
             anchor: anchor.clone(),
-            trace: decision.to_trace().map_err(GatekeepAxumError::Trace)?,
             effect: EffectKind::from(decision),
             obligations: decision.obligations.clone(),
+            consulted: trace.consulted.clone(),
+            decisive: trace.decisive.clone(),
+            denial_reason: decision.denial_reason().map_err(GatekeepAxumError::Trace)?,
+            trace,
             tenant,
             principal,
+            subjects: match self.audit_subjects {
+                AuditSubjects::Omit => BTreeMap::default(),
+                AuditSubjects::Record => context.subjects.clone(),
+            },
         };
-        self.audit_sink
-            .record(&entry)
-            .map_err(GatekeepAxumError::Audit)?;
-
         let summary = DecisionSummary {
             anchor: anchor.clone(),
             effect: EffectKind::from(decision),
             obligations: decision.obligations.clone(),
             consulted: decision.trace.consulted.clone(),
         };
+        self.audit_sink
+            .record(&entry)
+            .await
+            .map_err(GatekeepAxumError::Audit)?;
+
         self.observer.observe(&summary);
         Ok(())
     }

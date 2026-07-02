@@ -84,10 +84,11 @@ impl RecordingAudit {
     }
 }
 
+#[async_trait]
 impl AuditSink for RecordingAudit {
     type Error = RecordingError;
 
-    fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
+    async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
         self.entries
             .lock()
             .map_err(|_error| RecordingError::Poisoned)?
@@ -99,10 +100,11 @@ impl AuditSink for RecordingAudit {
 #[derive(Clone, Copy)]
 pub struct FailingAudit;
 
+#[async_trait]
 impl AuditSink for FailingAudit {
     type Error = FailingAuditError;
 
-    fn record(&self, _entry: &AuditEntry) -> Result<(), Self::Error> {
+    async fn record(&self, _entry: &AuditEntry) -> Result<(), Self::Error> {
         Err(FailingAuditError)
     }
 }
@@ -215,6 +217,10 @@ pub enum TestError {
     ExpectedDenial,
     #[error("request was expected to fail at the authorization boundary")]
     ExpectedBoundaryError,
+    #[error("audit release receiver was dropped")]
+    AuditReleaseDropped,
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
     #[error("authorization failed")]
     Authorization,
 }

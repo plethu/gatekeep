@@ -22,8 +22,11 @@ sqlite-tests = ["sqlite", "sqlx/runtime-tokio"]
 mysql-tests = ["mysql", "sqlx/runtime-tokio"]
 
 [dependencies]
+async-trait.workspace = true
 gatekeep = { path = "../gatekeep", version = "0.4.0" }
-sqlx = { workspace = true, features = ["time", "uuid"] }
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["json", "time", "uuid"] }
 thiserror.workspace = true
 
 [dev-dependencies]

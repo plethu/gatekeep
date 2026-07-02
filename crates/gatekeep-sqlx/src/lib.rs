@@ -17,8 +17,16 @@ use gatekeep::{
     ResidualPolicyBranch, ResidualPolicyNode,
 };
 
+mod audit;
 mod fragment;
 
+#[cfg(feature = "mysql")]
+pub use audit::MySqlDecisionAuditRepository;
+#[cfg(feature = "postgres")]
+pub use audit::PgDecisionAuditRepository;
+#[cfg(feature = "sqlite")]
+pub use audit::SqliteDecisionAuditRepository;
+pub use audit::{DecisionAuditRecord, SqlxAuditError, SqlxAuditStore, SqlxDecisionAuditRepository};
 #[cfg(feature = "mysql")]
 pub use fragment::MySqlBackend;
 #[cfg(feature = "sqlite")]

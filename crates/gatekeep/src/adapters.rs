@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    Decision, FactId, KnownFacts, Locale, ObligationId, PartialFacts, PolicyHash, PolicyId,
-    Presence, ResidualPolicy, SubjectRef, SubjectSlot, TenantId, Trace,
+    Decision, DenialReason, FactId, KnownFacts, Locale, ObligationId, PartialFacts, PolicyHash,
+    PolicyId, Presence, RequestId, ResidualPolicy, SubjectRef, SubjectSlot, TenantId, Trace,
+    TraceClause,
 };
 
 /// Request-scoped data passed to adapter boundaries.
@@ -83,22 +84,24 @@ impl PolicyObserver for NoopPolicyObserver {
 }
 
 /// Append-only audit boundary.
+#[async_trait]
 pub trait AuditSink: Send + Sync {
     /// Sink-specific write error.
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Records a durable audit entry.
-    fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error>;
+    async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error>;
 }
 
 /// Audit sink that discards entries.
 #[derive(Default)]
 pub struct NoopAuditSink;
 
+#[async_trait]
 impl AuditSink for NoopAuditSink {
     type Error = Infallible;
 
-    fn record(&self, _entry: &AuditEntry) -> Result<(), Self::Error> {
+    async fn record(&self, _entry: &AuditEntry) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -197,16 +200,27 @@ pub struct DecisionSummary {
 /// Durable audit payload for a decision.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditEntry {
+    /// Request identifier supplied by the application boundary.
+    pub request_id: Option<RequestId>,
     /// Policy version that produced the decision.
     pub anchor: PolicyAnchor,
-    /// Durable, non-generic decision trace.
-    pub trace: Trace,
     /// Permit/deny effect.
     pub effect: EffectKind,
     /// Obligations attached to the decision.
     pub obligations: Vec<ObligationId>,
+    /// Facts read by the evaluator in first-read order.
+    pub consulted: Vec<(FactId, Presence)>,
+    /// Clause that fixed the decision effect.
+    pub decisive: TraceClause,
+    /// Structured denial reason for deny decisions.
+    pub denial_reason: Option<DenialReason>,
+    /// Durable, non-generic decision trace.
+    pub trace: Trace,
     /// Optional tenant recorded by an opt-in sink.
     pub tenant: Option<TenantId>,
     /// Optional principal recorded by an opt-in sink.
     pub principal: Option<SubjectRef>,
+    /// Optional named request subjects recorded by an opt-in sink.
+    #[serde(default)]
+    pub subjects: BTreeMap<SubjectSlot, SubjectRef>,
 }
