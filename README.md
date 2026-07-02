@@ -13,6 +13,12 @@ It is the sibling of [`keepsake`](../keepsake-rs): keepsake keeps relation
 lifecycle state — entitlements, holds, sanctions, risk flags, gates — and
 gatekeep decides what those facts permit. The two compose but stay independent crates.
 
+## Documentation
+
+The Starlight docs site lives in [`docs-site`](docs-site). It starts with the
+authorization model, lattice outcomes, facts, decisions, and audit, then covers
+Axum, SQLx, Fluent, and Keepsake integrations.
+
 ## Where it fits
 
 Use gatekeep for an in-process authorization boundary authored in Rust, by the

@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Documentation
+
+- Added an Astro Starlight docs site covering the authorization model, lattice
+  outcomes, facts and context, decisions and audit, Axum integration, SQLx list
+  filtering, durable audit, and Keepsake-backed entitlements.
+
 ### `gatekeep`
 
 - Changed `AuditSink::record` to async so durable audit sinks can perform IO

@@ -1,0 +1,48 @@
+---
+title: Policy Combinators
+description: Core policy builders and their composition rules.
+---
+
+Policies are built from a small set of functions in `gatekeep::policy`.
+
+| Function | Use |
+| --- | --- |
+| `permit(outcome)` | unconditional permit with an outcome |
+| `deny()` | unconditional denial |
+| `grant(outcome, condition)` | permit when a condition is satisfied |
+| `grant_clause(outcome, condition)` | grant builder with grant-only methods |
+| `deny_when(condition, reason)` | deny when a guard condition is true |
+| `all(policies)` | require every child policy; combine outcomes with `meet` |
+| `any(policies)` | allow any child policy; combine outcomes with `join` |
+| `or_else(primary, fallback)` | evaluate a fallback after primary denial |
+
+## Grant Metadata
+
+Grant clauses can carry:
+
+- a label for trace and audit
+- a denial reason code
+- a hidden denial shape
+- permit obligations
+
+Use `try_labeled` and `try_reason` when labels or reason codes come from
+configuration. Use the non-`try` methods only with trusted static ids.
+
+## Empty Compositions
+
+`all([])` and `any([])` fail closed with `Policy::Deny`. Empty policy sets
+represent "no rule grants access" and keep accidental permit out of the default
+path.
+
+## Deny Guards
+
+`deny_when` is useful for ordered fail-closed checks:
+
+```rust
+let policy = policy::all([
+    policy::deny_when(condition::has::<SuspendedAccount>(), "account_suspended"),
+    policy::grant(ReadAccess::Full, condition::has::<CaseOwner>()),
+]);
+```
+
+Put deny guards before positive grants when the rule should stop on the guard.

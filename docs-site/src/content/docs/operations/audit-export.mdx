@@ -1,0 +1,29 @@
+---
+title: Audit Export
+description: Move SQL audit rows to external systems.
+---
+
+`gatekeep-sqlx` writes one outbox row for each decision audit record. External
+workers can read from `gatekeep_audit_outbox` and deliver the serialized
+`AuditEntry` payload to Kafka, Restate, S3, warehouses, or support tooling.
+
+## Delivery Contract
+
+Treat the database outbox as the stable integration boundary:
+
+- page rows by id
+- deliver each payload to the external system
+- record downstream checkpoints outside Gatekeep
+- retry rows that were read but not accepted downstream
+
+Gatekeep does not include broker or object-storage clients. Keep those clients
+in the application worker so deployment, credentials, batching, and backoff
+match the service.
+
+## Payload Use
+
+Use structured decision tables for local queries and reporting. Use the outbox
+payload when the downstream system needs the full decision envelope.
+
+For high-volume exports, keep worker queries bounded and checkpoint by the last
+accepted outbox id.

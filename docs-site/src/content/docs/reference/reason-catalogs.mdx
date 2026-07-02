@@ -1,0 +1,36 @@
+---
+title: Reason Catalogs
+description: Stable reason codes and localized messages.
+---
+
+Gatekeep policies carry stable reason codes. Presentation layers turn those
+codes into user-facing messages.
+
+## Reason Codes
+
+Reason codes should be stable, searchable, and product-neutral:
+
+```rust
+let policy = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
+    .try_reason("not_case_owner")?;
+```
+
+Use one code for one denial meaning. Put variable data in reason parameters,
+not in the code string.
+
+## Fluent
+
+`gatekeep-fluent` implements `ReasonCatalog` with Fluent message bundles. That
+lets services keep policy decisions stable while changing wording by locale.
+
+Audit records should store the code and parameters. Render human text at the UI,
+API, or support-tool boundary.
+
+## Disclosure Shape
+
+`DenyShape::Forbidden` means the service may disclose that the protected object
+exists. `DenyShape::Hidden` supports "act as missing" responses for sensitive
+resources.
+
+Choose the shape in policy code so audit, HTTP responses, and localized messages
+agree.

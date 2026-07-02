@@ -1,0 +1,75 @@
+---
+title: Lattice Outcomes
+description: How Gatekeep combines graded access.
+---
+
+A Gatekeep permit carries an outcome. The outcome can be a simple enum such as
+`ReadAccess::Full`, or a richer type such as a set of allowed operations. The
+`Lattice` trait tells Gatekeep how to combine outcomes when policies are
+composed.
+
+Most applications can start with one question: if two clauses both apply, which
+access level should survive?
+
+## The Four Operations
+
+`Lattice` has four methods:
+
+| Method | Meaning in policy composition |
+| --- | --- |
+| `top()` | the highest access value |
+| `bottom()` | the lowest access value |
+| `meet(a, b)` | the stricter value shared by two requirements |
+| `join(a, b)` | the broader value available from alternatives |
+
+For ordered access levels, `meet` is usually `min` and `join` is usually `max`.
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+enum ReadAccess {
+    None,
+    Redacted,
+    Full,
+}
+
+impl gatekeep::Lattice for ReadAccess {
+    fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
+    fn join(&self, other: &Self) -> Self { (*self).max(*other) }
+    fn top() -> Self { Self::Full }
+    fn bottom() -> Self { Self::None }
+}
+```
+
+## `all` Uses `meet`
+
+`policy::all` means every child policy has to allow the request. If several
+children permit with different outcomes, the result uses `meet`.
+
+That makes `all` useful for caps. One clause may grant full access to owners,
+while another caps access to redacted during an incident response hold. The
+combined permit returns the stricter outcome.
+
+## `any` Uses `join`
+
+`policy::any` means any child policy can allow the request. If several children
+permit, the result uses `join`.
+
+That makes `any` useful for alternative routes to access. A case owner might get
+full access, while a support auditor gets redacted access. If both apply, the
+broader outcome wins.
+
+## Keep The Order Obvious
+
+Use enums for simple tiers. Put the lowest value first and derive `Ord` only
+when the order is obvious to the team.
+
+Use a custom `Lattice` implementation for sets, scopes, bitflags, or records.
+The methods should read like policy rules, with tests for the combinations that
+matter:
+
+- combining two requirements narrows access
+- combining two alternatives broadens access
+- `top` and `bottom` match the service's permit model
+
+If the outcome type feels hard to explain, split the policy. A clear outcome
+model matters more than fitting every authorization detail into one enum.

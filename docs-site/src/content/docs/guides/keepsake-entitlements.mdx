@@ -1,0 +1,39 @@
+---
+title: Keepsake Entitlements
+description: Resolve policy facts from active relation state.
+---
+
+`gatekeep-keepsake` connects Gatekeep facts to active Keepsake relations. Use it
+when entitlements, tags, sanctions, risk flags, or gates are already modeled as
+Keepsake relations.
+
+## Relation-Backed Facts
+
+The adapter maps a policy fact to a Keepsake target:
+
+- subject kind and id
+- relation id
+- optional request subject slot
+
+By default, facts target the request principal. Use `SubjectSlot` when the fact
+belongs to another request entity, such as a repository, account, package, or
+source identity.
+
+## Reads And Writes Share Targets
+
+The resolver can expose the same target it uses for reads through
+`target_for_fact` and `targets_for_facts`. Lifecycle code can turn that target
+into a Keepsake `RevokeBySubject` command.
+
+That keeps authorization reads and lifecycle writes aligned without making
+Gatekeep depend on SQLx.
+
+## Application Boundary
+
+Keep the resolver generic over `S: ActiveRelationSource` where possible. Use
+Keepsake's erased `DynActiveRelationSource` at composition boundaries that need
+runtime storage selection.
+
+The adapter reports a missing named subject as `ResolveError::MissingSubject`.
+That is a request construction problem. An absent Keepsake relation remains an
+authorization fact result.

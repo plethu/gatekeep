@@ -1,0 +1,23 @@
+---
+title: Gatekeep
+description: Code-first authorization for Rust services.
+---
+
+Gatekeep evaluates authorization policies written as Rust values. It gives a
+service one in-process decision point for permits, denials, explanations, query
+filters, and audit records.
+
+Start with the overview if you are choosing where Gatekeep fits. Read the
+lattice page before designing graded access such as redacted/full records or
+role tiers. Use the guides when you are wiring Gatekeep into Axum, SQLx, or
+Keepsake.
+
+The crates stay narrow:
+
+- `gatekeep` provides policy values, facts, evaluation, partial evaluation, and
+  audit traits.
+- `gatekeep-axum` applies a policy at an HTTP boundary.
+- `gatekeep-sqlx` lowers residual policies into trusted SQL and stores durable
+  decision audit rows.
+- `gatekeep-fluent` maps reason codes to localized messages.
+- `gatekeep-keepsake` resolves facts from active Keepsake relations.

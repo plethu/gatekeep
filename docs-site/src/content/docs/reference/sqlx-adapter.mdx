@@ -1,0 +1,45 @@
+---
+title: SQLx Adapter
+description: Query lowering and durable audit APIs.
+---
+
+`gatekeep-sqlx` has two jobs:
+
+- lower residual policies into trusted SQL fragments
+- store and query durable decision audit records
+
+## Query Lowering
+
+Use partial evaluation before lowering. The application supplies
+`SqlxFactPredicates` so each unknown fact has a trusted SQL predicate. The
+adapter renders a backend-aware fragment for a `sqlx::QueryBuilder`.
+
+Keep schema knowledge in the application. Fact predicates should be static or
+constructed from trusted code paths, with user values passed as SQLx binds.
+
+## Audit Repository
+
+`SqlxDecisionAuditRepository<B>` records and queries decision audit rows for a
+backend marker `B`.
+
+Backend aliases:
+
+| Alias | Backend |
+| --- | --- |
+| `PgDecisionAuditRepository` | Postgres |
+| `SqliteDecisionAuditRepository` | SQLite |
+| `MySqlDecisionAuditRepository` | MySQL |
+
+The repository implements `gatekeep::AuditSink`, so it can be passed to
+`gatekeep_axum::Gatekeeper::with_audit_sink`.
+
+## Migrations
+
+Use the migration for the enabled backend:
+
+- `migrations/postgres/0001_audit.sql`
+- `migrations/sqlite/0001_audit.sql`
+- `migrations/mysql/0001_audit.sql`
+
+The schema includes decision, consulted fact, obligation, request subject,
+reason parameter, and outbox tables.
