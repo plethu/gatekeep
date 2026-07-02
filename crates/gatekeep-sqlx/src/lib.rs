@@ -1,7 +1,18 @@
-//! `SQLx` lowering for gatekeep residual policies.
+//! `SQLx` support for gatekeep query lowering and durable decision audit.
 //!
 //! This crate lowers a `gatekeep::ResidualPolicy` into trusted SQL fragments
 //! that can be appended to a `sqlx::QueryBuilder`.
+//!
+//! It also provides [`SqlxDecisionAuditRepository`], an async
+//! `gatekeep::AuditSink` implementation for Postgres, `SQLite`, and `MySQL`. Run
+//! the matching migration under `migrations/{postgres,sqlite,mysql}`, construct
+//! the backend repository alias such as [`PgDecisionAuditRepository`], and pass
+//! it to `gatekeep_axum::Gatekeeper::with_audit_sink`.
+//!
+//! Decision audit rows are stored with structured child rows for consulted
+//! facts, obligations, request subjects, and denial reason parameters. Each
+//! recorded decision also writes a `gatekeep_audit_outbox` row for downstream
+//! export workers.
 
 #![forbid(unsafe_code)]
 
