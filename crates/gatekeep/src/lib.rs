@@ -1,8 +1,7 @@
 //! Code-first authorization primitives for deterministic Rust policy evaluation.
 //!
-//! The crate provides the pure gatekeep core: stable fact identities, reified
-//! policy values, synchronous evaluation, partial evaluation for query lowering,
-//! and adapter traits for application-owned IO boundaries.
+//! Human guides and reference material are in the `docs/` directory of the
+//! repository. API reference: <https://docs.rs/gatekeep>.
 
 #![forbid(unsafe_code)]
 

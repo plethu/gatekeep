@@ -1,7 +1,4 @@
----
-title: Quickstart
-description: Evaluate one policy with typed facts.
----
+# Quickstart
 
 This example defines one fact, one graded outcome, and one policy. The policy
 says that a case owner may read the full case.

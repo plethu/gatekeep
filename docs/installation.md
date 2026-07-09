@@ -1,7 +1,4 @@
----
-title: Installation
-description: Crates and feature choices.
----
+# Installation
 
 Add the core crate first. Add adapters only where the application needs them.
 

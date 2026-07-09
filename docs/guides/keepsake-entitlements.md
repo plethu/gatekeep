@@ -1,7 +1,4 @@
----
-title: Keepsake Entitlements
-description: Resolve policy facts from active relation state.
----
+# Keepsake Entitlements
 
 `gatekeep-keepsake` connects Gatekeep facts to active Keepsake relations. Use it
 when entitlements, tags, sanctions, risk flags, or gates are already modeled as

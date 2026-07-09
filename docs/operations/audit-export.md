@@ -1,7 +1,4 @@
----
-title: Audit Export
-description: Move SQL audit rows to external systems.
----
+# Audit Export
 
 `gatekeep-sqlx` writes one outbox row for each decision audit record. External
 workers can read from `gatekeep_audit_outbox` and deliver the serialized

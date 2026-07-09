@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-fluent"
-version = "0.4.0"
+version = "1.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,10 +11,11 @@ description = "Fluent reason catalog adapter for gatekeep"
 readme = "../../README.md"
 categories = ["authentication", "internationalization", "localization"]
 keywords = ["authorization", "policy", "authz", "fluent"]
+documentation = "https://docs.rs/gatekeep-fluent"
 
 [dependencies]
 fluent-bundle.workspace = true
-gatekeep = { path = "../gatekeep", version = "0.4.0" }
+gatekeep = { path = "../gatekeep", version = "1.0.0" }
 serde_json.workspace = true
 thiserror.workspace = true
 unic-langid.workspace = true

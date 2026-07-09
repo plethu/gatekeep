@@ -1,7 +1,4 @@
----
-title: Reason Catalogs
-description: Stable reason codes and localized messages.
----
+# Reason Catalogs
 
 Gatekeep policies carry stable reason codes. Presentation layers turn those
 codes into user-facing messages.

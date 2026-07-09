@@ -1,7 +1,4 @@
----
-title: Decisions And Audit
-description: What a Gatekeep decision records.
----
+# Decisions And Audit
 
 A Gatekeep decision is more than a boolean. It records the effect, obligations,
 facts consulted by evaluation, and the clause that fixed the result.

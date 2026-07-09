@@ -1,7 +1,4 @@
----
-title: Migrations
-description: Database setup for durable audit.
----
+# Migrations
 
 SQL lowering does not require Gatekeep tables. Durable decision audit does.
 

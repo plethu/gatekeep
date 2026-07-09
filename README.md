@@ -9,15 +9,24 @@
 Rust values, a pure deterministic core evaluates them, and every decision
 carries the reasons that produced it.
 
-It is the sibling of [`keepsake`](../keepsake-rs): keepsake keeps relation
+It is the sibling of [keepsake](https://codeberg.org/plethu/keepsake): keepsake keeps relation
 lifecycle state — entitlements, holds, sanctions, risk flags, gates — and
 gatekeep decides what those facts permit. The two compose but stay independent crates.
 
 ## Documentation
 
-The Starlight docs site lives in [`docs-site`](docs-site). It starts with the
-authorization model, lattice outcomes, facts, decisions, and audit, then covers
-Axum, SQLx, Fluent, and Keepsake integrations.
+- [docs/](docs/README.md) — guides and reference for integrators
+- [docs.rs/gatekeep](https://docs.rs/gatekeep) — core crate API
+- Adapter crates: [gatekeep-axum](https://docs.rs/gatekeep-axum),
+  [gatekeep-fluent](https://docs.rs/gatekeep-fluent),
+  [gatekeep-keepsake](https://docs.rs/gatekeep-keepsake),
+  [gatekeep-sqlx](https://docs.rs/gatekeep-sqlx)
+
+Read [Lattice outcomes](docs/concepts/lattice-outcomes.md) before designing
+graded access such as redacted/full records or scope unions.
+
+Keepsake ([docs.rs/keepsake](https://docs.rs/keepsake)) stores relation
+lifecycles; gatekeep decides what those facts permit.
 
 ## Where it fits
 

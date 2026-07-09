@@ -1,7 +1,4 @@
----
-title: Facts And Context
-description: Request data, named subjects, and fact resolution.
----
+# Facts And Context
 
 Facts describe authorization inputs. Context describes the request that needs a
 decision. Gatekeep keeps both explicit so request authorization, SQL lowering,

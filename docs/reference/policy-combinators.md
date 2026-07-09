@@ -1,7 +1,4 @@
----
-title: Policy Combinators
-description: Core policy builders and their composition rules.
----
+# Policy Combinators
 
 Policies are built from a small set of functions in `gatekeep::policy`.
 

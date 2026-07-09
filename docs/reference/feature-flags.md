@@ -1,7 +1,4 @@
----
-title: Feature Flags
-description: Crate features used by adapters and tests.
----
+# Feature Flags
 
 Gatekeep keeps the core crate small and puts integrations in adapter crates.
 

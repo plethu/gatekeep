@@ -1,7 +1,4 @@
----
-title: Durable Audit
-description: Store queryable decision records with SQLx.
----
+# Durable Audit
 
 Durable audit records let a service explain an authorization decision after the
 request is gone. `gatekeep-sqlx` stores decision rows, structured child rows,

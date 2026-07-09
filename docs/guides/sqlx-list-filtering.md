@@ -1,7 +1,4 @@
----
-title: SQLx List Filtering
-description: Lower one policy into a row filter and grade projection.
----
+# SQLx List Filtering
 
 List endpoints need authorization before rows leave the database. `gatekeep-sqlx`
 lowers a residual policy into trusted SQL fragments that can be appended to a

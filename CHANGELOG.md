@@ -2,13 +2,15 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 1.0.0 - 2026-07-09
+
+First stable release. Semver applies to the public Rust API and to audit schema
+expectations in `gatekeep-sqlx` from this version onward.
 
 ### Documentation
 
-- Added an Astro Starlight docs site covering the authorization model, lattice
-  outcomes, facts and context, decisions and audit, Axum integration, SQLx list
-  filtering, durable audit, and Keepsake-backed entitlements.
+- Moved human documentation from the Astro docs site into [`docs/`](docs/README.md).
+- Added a lattice rationale in [Lattice outcomes](docs/concepts/lattice-outcomes.md).
 
 ### `gatekeep`
 
@@ -27,6 +29,9 @@ All notable changes to this project are documented here.
   queryable decision audit storage.
 - Added SQL migrations for decision audit rows, consulted facts, obligations,
   request subjects, reason params, and outbox rows.
+
+- CI runs on pull requests via Codeberg-hosted Forgejo Actions.
+- Depends on `keepsake` 1.0.
 
 ## [0.4.0] — 2026-06-23
 

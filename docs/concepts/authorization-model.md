@@ -1,7 +1,4 @@
----
-title: Authorization Model
-description: How policies, facts, and outcomes fit together.
----
+# Authorization Model
 
 Gatekeep treats authorization as a pure decision over known facts. The policy
 does not read the database or inspect HTTP state. The application does that work
@@ -44,8 +41,9 @@ rule; the resolver should only provide inputs.
 ## Outcomes Carry Access
 
 A permit can carry more than yes. The outcome might be a role, a redaction
-level, a permission set, or a data-scope grade. The `Lattice` trait defines how
-Gatekeep combines those outcomes when a policy has several branches.
+level, a permission set, or a data-scope grade. See [Lattice outcomes](../concepts/lattice-outcomes.md)
+for why Gatekeep models that combination as a lattice and how `all` and `any`
+use `meet` and `join`.
 
 Use `Effect::Deny` for failure. Use typed permit outcomes for the access level
 the application may apply after the decision.

@@ -1,7 +1,4 @@
----
-title: SQLx Adapter
-description: Query lowering and durable audit APIs.
----
+# SQLx Adapter
 
 `gatekeep-sqlx` has two jobs:
 

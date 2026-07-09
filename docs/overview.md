@@ -1,7 +1,4 @@
----
-title: Overview
-description: What Gatekeep is for.
----
+# Overview
 
 Gatekeep is an authorization library for Rust services that keep policy logic in
 the application. A policy is a typed Rust value. Evaluation is deterministic and

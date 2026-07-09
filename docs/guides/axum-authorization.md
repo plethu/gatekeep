@@ -1,7 +1,4 @@
----
-title: Axum Authorization
-description: Apply Gatekeep at an HTTP boundary.
----
+# Axum Authorization
 
 `gatekeep-axum` applies a policy before a handler returns protected data. The
 adapter resolves request facts, evaluates the policy, records audit, and maps

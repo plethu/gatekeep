@@ -10,8 +10,6 @@ Runs Gatekeep's canonical local project gates:
   1. cargo fmt --all --check
   2. cargo clippy --workspace --all-targets --all-features -- -D warnings
   3. cargo test --workspace --all-features
-  4. pnpm install --frozen-lockfile
-  5. pnpm docs:verify
 EOF
 }
 
@@ -33,11 +31,6 @@ else
   fi
 fi
 
-export PNPM_STORE_DIR="${PNPM_STORE_DIR:-$repo_root/.pnpm-store}"
-export NPM_CONFIG_STORE_DIR="${NPM_CONFIG_STORE_DIR:-$PNPM_STORE_DIR}"
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$repo_root/.cache/xdg/data}"
-export XDG_STATE_HOME="${XDG_STATE_HOME:-$repo_root/.cache/xdg/state}"
-
 echo "== cargo fmt --all --check =="
 (
   cd "$repo_root"
@@ -56,20 +49,6 @@ echo "== cargo test =="
 (
   cd "$repo_root"
   cargo test --workspace --all-features
-)
-
-echo
-echo "== docs install =="
-(
-  cd "$repo_root"
-  pnpm install --frozen-lockfile
-)
-
-echo
-echo "== docs verify =="
-(
-  cd "$repo_root"
-  pnpm docs:verify
 )
 
 echo
