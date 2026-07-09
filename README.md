@@ -22,7 +22,7 @@ gatekeep decides what those facts permit. The two compose but stay independent c
   [gatekeep-keepsake](https://docs.rs/gatekeep-keepsake),
   [gatekeep-sqlx](https://docs.rs/gatekeep-sqlx)
 
-Read [Lattice outcomes](docs/concepts/lattice-outcomes.md) before designing
+Read [Combining permit outcomes](docs/concepts/lattice-outcomes.md) before designing
 graded access such as redacted/full records or scope unions.
 
 Keepsake ([docs.rs/keepsake](https://docs.rs/keepsake)) stores relation

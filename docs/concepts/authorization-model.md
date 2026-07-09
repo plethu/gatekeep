@@ -41,7 +41,7 @@ rule; the resolver should only provide inputs.
 ## Outcomes Carry Access
 
 A permit can carry more than yes. The outcome might be a role, a redaction
-level, a permission set, or a data-scope grade. See [Lattice outcomes](../concepts/lattice-outcomes.md)
+level, a permission set, or a data-scope grade. See [Combining permit outcomes](../concepts/lattice-outcomes.md)
 for why Gatekeep models that combination as a lattice and how `all` and `any`
 use `meet` and `join`.
 

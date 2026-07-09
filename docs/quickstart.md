@@ -57,7 +57,7 @@ consulted `case_owner` and returns the reason code from the denied grant.
 
 ## Next Steps
 
-Read `Lattice Outcomes` before adding roles, tiers, scopes, or redaction levels.
+Read [Combining permit outcomes](../concepts/lattice-outcomes.md) before adding roles, tiers, scopes, or redaction levels.
 Then wire the same policy into an adapter:
 
 - `Axum Authorization` for request boundaries

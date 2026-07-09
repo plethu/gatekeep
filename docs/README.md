@@ -16,13 +16,13 @@ crates linked from each crate's manifest.
 2. [Installation](installation.md)
 3. [Quickstart](quickstart.md)
 
-Read [Lattice outcomes](concepts/lattice-outcomes.md) before designing graded
+Read [Combining permit outcomes](concepts/lattice-outcomes.md) before designing graded
 access such as redacted/full records or scope unions.
 
 ## Concepts
 
 - [Authorization model](concepts/authorization-model.md)
-- [Lattice outcomes](concepts/lattice-outcomes.md)
+- [Combining permit outcomes](concepts/lattice-outcomes.md)
 - [Facts and context](concepts/facts-and-context.md)
 - [Decisions and audit](concepts/decisions-and-audit.md)
 
