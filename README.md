@@ -9,10 +9,6 @@
 Rust values, a pure deterministic core evaluates them, and every decision
 carries the reasons that produced it.
 
-It is the sibling of [keepsake](https://codeberg.org/plethu/keepsake): keepsake keeps relation
-lifecycle state — entitlements, holds, sanctions, risk flags, gates — and
-gatekeep decides what those facts permit. The two compose but stay independent crates.
-
 ## Documentation
 
 - [docs/](docs/README.md) — guides and reference for integrators
@@ -24,9 +20,6 @@ gatekeep decides what those facts permit. The two compose but stay independent c
 
 Read [Combining permit outcomes](docs/concepts/lattice-outcomes.md) before designing
 graded access such as redacted/full records or scope unions.
-
-Keepsake ([docs.rs/keepsake](https://docs.rs/keepsake)) stores relation
-lifecycles; gatekeep decides what those facts permit.
 
 ## Where it fits
 
@@ -124,24 +117,7 @@ Export workers can page `gatekeep_audit_outbox` by id and transform the stored
 
 For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [docs.rs](https://docs.rs/gatekeep-sqlx) and the
-[`axum-authorized-list`](examples/axum-authorized-list) and
-[`axum-keepsake-authorized-list`](examples/axum-keepsake-authorized-list)
-examples, which resolve request facts in-process and from keepsake.
-
-`gatekeep-keepsake` resolves gatekeep facts from active keepsake relations. The
-default resolver maps the request principal to a keepsake subject, and bindings
-can target additional request-scoped subjects through `SubjectSlot` values in
-`Context::subjects`. Use that for facts attached to something other than the
-principal, such as a skill version, repository, account, or source identity. A
-missing subject slot is reported as `ResolveError::MissingSubject`, distinct
-from an unbound or unproducible fact.
-
-The resolver can also expose the same `(SubjectRef, RelationId)` target it uses
-for reads through `target_for_fact` and `targets_for_facts`. Lifecycle code can
-turn that target into a keepsake `RevokeBySubject` command without taking on a
-SQLx dependency. `KeepsakeResolver<S>` intentionally stays generic over
-`S: ActiveRelationSource`; use keepsake's `DynActiveRelationSource` at
-application composition boundaries when runtime erasure is needed.
+[`axum-authorized-list`](examples/axum-authorized-list) example.
 
 ## Why it exists
 
