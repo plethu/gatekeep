@@ -59,6 +59,11 @@ macro_rules! owned_id {
 
         impl $name {
             /// Creates a validated identifier.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`GatekeepError::EmptyIdentifier`] when `value` is empty
+            /// or contains only whitespace.
             pub fn new(value: impl Into<String>) -> GatekeepResult<Self> {
                 validate_identifier($field, value).map(Self)
             }
@@ -123,6 +128,11 @@ macro_rules! static_id {
             }
 
             /// Converts this static identifier into its owned form.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`GatekeepError::EmptyIdentifier`] if the static and
+            /// owned identifier validation rules have drifted apart.
             pub fn to_owned_id(self) -> GatekeepResult<$owned> {
                 $owned::new(self.0)
             }
@@ -171,6 +181,11 @@ pub struct Locale(String);
 
 impl Locale {
     /// Creates a locale tag from non-empty ASCII alphanumeric and `-` input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepError::InvalidLocale`] when `value` is empty or
+    /// contains unsupported characters.
     pub fn new(value: impl Into<String>) -> GatekeepResult<Self> {
         validate_locale(value).map(Self)
     }
@@ -224,6 +239,11 @@ pub struct SubjectRef {
 
 impl SubjectRef {
     /// Creates a validated subject reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepError::EmptyIdentifier`] when either component is
+    /// empty or contains only whitespace.
     pub fn new(kind: impl Into<String>, id: impl Into<String>) -> GatekeepResult<Self> {
         Ok(Self {
             kind: validate_identifier("subject_kind", kind)?,

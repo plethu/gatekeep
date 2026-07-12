@@ -58,6 +58,10 @@ pub fn required_residual_facts<O>(policy: &ResidualPolicy<O>) -> BTreeSet<FactId
 
 impl<O: Serialize> Policy<O> {
     /// Computes a stable hash of the serialized policy value.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`postcard::Error`] when the policy cannot be serialized.
     pub fn hash(&self) -> Result<PolicyHash, postcard::Error> {
         let bytes = postcard::to_allocvec(self)?;
         Ok(PolicyHash::from_trusted(

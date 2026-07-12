@@ -83,6 +83,11 @@ impl KnownFacts {
     }
 
     /// Builds known facts from explicit entries, rejecting `Presence::Unknown`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepError::InvalidPolicyRecord`] when an entry has
+    /// [`Presence::Unknown`].
     pub fn from_entries(
         entries: impl IntoIterator<Item = (FactId, Presence)>,
     ) -> GatekeepResult<Self> {
@@ -114,6 +119,11 @@ impl KnownFacts {
     }
 
     /// Adds a runtime fact, rejecting `Presence::Unknown`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepError::InvalidPolicyRecord`] when `presence` is
+    /// [`Presence::Unknown`].
     pub fn try_with_fact(mut self, fact: FactId, presence: Presence) -> GatekeepResult<Self> {
         self.0.try_insert_known(fact, presence)?;
         Ok(self)

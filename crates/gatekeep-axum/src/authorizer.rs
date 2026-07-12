@@ -139,6 +139,12 @@ where
 {
     /// Resolves facts, evaluates the policy, observes and audits the decision,
     /// and returns an axum rejection for denied requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepRejection`] when policy hashing, fact resolution,
+    /// trace conversion, or audit persistence fails, or when the policy denies
+    /// the request.
     pub async fn authorize<O>(
         &self,
         policy_id: PolicyId,

@@ -77,6 +77,11 @@ impl DenialResponseConfig {
     ///
     /// The configured code is a replacement for the hidden policy reason, not
     /// the hidden policy reason itself.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`gatekeep::GatekeepError::EmptyIdentifier`] when `reason` is
+    /// empty or contains only whitespace.
     pub fn try_with_hidden_reason(
         mut self,
         reason: impl Into<String>,

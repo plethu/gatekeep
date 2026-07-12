@@ -276,6 +276,8 @@ pub type TestResult<T> = core::result::Result<T, TestError>;
 #[derive(Debug, thiserror::Error)]
 pub enum TestError {
     #[error(transparent)]
+    Audit(#[from] gatekeep_sqlx::SqlxAuditError),
+    #[error(transparent)]
     Env(#[from] std::env::VarError),
     #[error(transparent)]
     Driver(#[from] gatekeep_sqlx::SqlxDriverError),

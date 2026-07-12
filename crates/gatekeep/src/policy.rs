@@ -91,6 +91,11 @@ impl<O> GrantPolicy<O> {
     }
 
     /// Tries to add a validated label to this grant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::GatekeepError::EmptyIdentifier`] when `label` is empty
+    /// or contains only whitespace.
     pub fn try_labeled(self, label: impl Into<String>) -> GatekeepResult<Self> {
         Ok(self.labeled(ClauseLabel::new(label)?))
     }
@@ -110,6 +115,11 @@ impl<O> GrantPolicy<O> {
     }
 
     /// Tries to add a validated reason code to this grant's denial.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::GatekeepError::EmptyIdentifier`] when `reason` is empty
+    /// or contains only whitespace.
     pub fn try_reason(self, reason: impl Into<String>) -> GatekeepResult<Self> {
         Ok(self.reason(ReasonCode::new(reason)?))
     }
@@ -174,6 +184,11 @@ impl<O> Policy<O> {
     }
 
     /// Tries to add a validated label to grant policies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::GatekeepError::EmptyIdentifier`] when `label` is empty
+    /// or contains only whitespace.
     pub fn try_labeled(self, label: impl Into<String>) -> GatekeepResult<Self> {
         Ok(self.labeled(ClauseLabel::new(label)?))
     }
@@ -201,6 +216,11 @@ impl<O> Policy<O> {
     }
 
     /// Tries to add a validated reason code to grant denials.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::GatekeepError::EmptyIdentifier`] when `reason` is empty
+    /// or contains only whitespace.
     pub fn try_reason(self, reason: impl Into<String>) -> GatekeepResult<Self> {
         Ok(self.reason(ReasonCode::new(reason)?))
     }

@@ -124,7 +124,7 @@ async fn insert_children(
     if let Some(reason) = &entry.denial_reason {
         for (key, value) in &reason.params {
             sqlx::query(
-                "insert into gatekeep_audit_reason_params (decision_id, key, value) values (?, ?, ?)",
+                "insert into gatekeep_audit_reason_params (decision_id, `key`, value) values (?, ?, ?)",
             )
             .bind(decision_id)
             .bind(key.as_str())

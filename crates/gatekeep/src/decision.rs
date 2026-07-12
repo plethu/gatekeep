@@ -44,6 +44,11 @@ impl<O> Decision<O> {
 
 impl<O: Serialize + Clone> Decision<O> {
     /// Converts the typed trace into a durable, non-generic trace.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TraceError::Outcome`] when an outcome cannot be represented
+    /// as JSON.
     pub fn to_trace(&self) -> Result<Trace, TraceError> {
         let decisive = match &self.trace.decisive {
             DecisiveClause::Permit {
@@ -80,6 +85,11 @@ impl<O: Serialize + Clone> Decision<O> {
     }
 
     /// Builds a stable denial reason for a denied grant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TraceError`] when an outcome cannot be serialized or a
+    /// generated reason identifier fails validation.
     pub fn denial_reason(&self) -> Result<Option<DenialReason>, TraceError> {
         if !matches!(self.effect, Effect::Deny) {
             return Ok(None);

@@ -114,6 +114,11 @@ pub trait QueryLowering<O> {
     type Projection;
 
     /// Lowers a residual policy for an authorized-list query.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LowerError`] when a residual fact has no backend mapping or
+    /// the outcome lattice cannot be projected by the backend.
     fn lower(
         &self,
         residual: &ResidualPolicy<O>,

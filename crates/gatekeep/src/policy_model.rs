@@ -327,6 +327,10 @@ impl<O> ResidualPolicy<O> {
     }
 
     /// Fallibly folds a residual policy bottom-up.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error produced by `visitor`.
     pub fn try_fold<T, E>(
         &self,
         visitor: &mut impl FnMut(ResidualPolicyNode<'_, O, T>) -> Result<T, E>,
@@ -402,6 +406,10 @@ impl<O> ResidualPolicy<O> {
 
     /// Fallibly folds a residual policy bottom-up, allowing selected branches to
     /// be skipped before they are visited.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error produced by `visitor`.
     pub fn try_fold_pruned<T, E>(
         &self,
         should_descend: &mut impl FnMut(&ResidualPolicyBranch<'_, O>) -> bool,

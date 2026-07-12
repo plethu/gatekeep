@@ -23,6 +23,11 @@ pub struct InMemoryAuditSink {
 
 impl InMemoryAuditSink {
     /// Returns the entries recorded so far.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InMemoryAuditError::Poisoned`] when a previous panic poisoned
+    /// the shared test buffer.
     pub fn entries(&self) -> Result<Vec<AuditEntry>, InMemoryAuditError> {
         self.entries
             .lock()

@@ -36,3 +36,10 @@ jobs:
 
       - name: Run project gates
         run: scripts/check-project-gates.sh
+
+      - name: Run database integration tests
+        run: make test-db-all
+
+      - name: Stop database services
+        if: always()
+        run: make db-down

@@ -95,6 +95,11 @@ where
     B: GatekeepSqlxBackend,
 {
     /// Builds a SQL fragment for a constant outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LowerError::NonTotalGrade`] when this projection cannot
+    /// represent the outcome lattice.
     fn constant(&self, outcome: &O) -> Result<SqlxFragment<B>, LowerError>;
 }
 
@@ -169,6 +174,11 @@ where
     }
 
     /// Lowers only the Boolean filter. This works for every outcome lattice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LowerError::Unlowerable`] when a residual fact has no trusted
+    /// predicate mapping.
     pub fn lower_filter<O>(
         &self,
         residual: &ResidualPolicy<O>,
