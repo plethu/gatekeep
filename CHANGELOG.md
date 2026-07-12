@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [1.0.1] - 2026-07-12
+
+### Reliability
+
+- Fixed MySQL durable audit writes by quoting the reserved reason-parameter
+  `key` column.
+- Added Docker-backed Postgres and MySQL audit round-trip tests to CI.
+- Resolved `keepsake` from crates.io so a standalone checkout can build without
+  a sibling repository.
+
+### Documentation
+
+- Documented public `Result` failure contracts and made missing `# Errors`
+  sections a denied workspace lint.
+
 ## 1.0.0 - 2026-07-09
 
 First stable release. Semver applies to the public Rust API and to audit schema
@@ -108,6 +123,7 @@ Initial release of all five crates.
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
 
+[1.0.1]: https://codeberg.org/plethu/gatekeep/releases/tag/v1.0.1
 [0.4.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.4.0
 [0.2.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.2.0
 [0.1.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.1.0
