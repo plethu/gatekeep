@@ -39,4 +39,4 @@ jobs:
 
       - name: Stop database services
         if: always()
-        run: make db-down
+        run: mise exec -- just db-down

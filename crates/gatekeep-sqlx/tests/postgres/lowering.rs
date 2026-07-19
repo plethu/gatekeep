@@ -6,7 +6,7 @@ use crate::support::{
 };
 
 #[tokio::test]
-#[ignore = "requires docker postgres; run `make test-db`"]
+#[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
 async fn lowered_filters_and_grades_match_in_memory_residual_evaluation() -> TestResult<()> {
     let pool = pool().await?;
     reset_database(&pool).await?;
@@ -101,7 +101,7 @@ async fn lowered_filters_and_grades_match_in_memory_residual_evaluation() -> Tes
 }
 
 #[tokio::test]
-#[ignore = "requires docker postgres; run `make test-db`"]
+#[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
 async fn obligated_or_else_fallback_is_pruned_in_postgres() -> TestResult<()> {
     let pool = pool().await?;
     reset_database(&pool).await?;

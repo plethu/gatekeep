@@ -2,4 +2,4 @@
 set -euo pipefail
 
 cd "${MISE_PROJECT_ROOT:?mise did not set MISE_PROJECT_ROOT}"
-exec scripts/check-project-gates.sh
+exec just check

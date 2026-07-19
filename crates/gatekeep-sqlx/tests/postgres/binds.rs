@@ -9,7 +9,7 @@ use sqlx::{
 use crate::support::{TestError, TestResult, pool, push_typed_bind};
 
 #[tokio::test]
-#[ignore = "requires docker postgres; run `make test-db`"]
+#[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
 async fn common_postgres_bind_values_round_trip() -> TestResult<()> {
     let pool = pool().await?;
     let uuid = Uuid::from_u128(0x123e_4567_e89b_12d3_a456_4266_1417_4000);

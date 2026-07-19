@@ -1,5 +1,6 @@
 [tools]
 rust = { version = "1.96.0", profile = "minimal", components = ["clippy", "rustfmt"] }
+just = "1.53.0"
 
 [env]
 RUST_BACKTRACE = "1"

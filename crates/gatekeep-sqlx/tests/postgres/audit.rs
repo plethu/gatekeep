@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[tokio::test]
-#[ignore = "requires docker postgres; run `make test-db`"]
+#[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
 async fn records_and_queries_structured_audit_rows() -> TestResult<()> {
     let pool = pool().await?;
     reset_audit_schema(&pool).await?;

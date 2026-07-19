@@ -78,7 +78,7 @@ impl SqlxFactPredicates<MySqlBackend> for Predicates {
 }
 
 #[tokio::test]
-#[ignore = "requires docker mysql; run `make test-db-mysql`"]
+#[ignore = "requires docker mysql; run `mise exec -- just test-db-mysql`"]
 async fn lowered_filters_and_grades_match_in_memory_residual_evaluation() -> TestResult<()> {
     let pool = pool().await?;
     reset_database(&pool).await?;
@@ -99,7 +99,7 @@ async fn lowered_filters_and_grades_match_in_memory_residual_evaluation() -> Tes
 }
 
 #[tokio::test]
-#[ignore = "requires docker mysql; run `make test-db-mysql`"]
+#[ignore = "requires docker mysql; run `mise exec -- just test-db-mysql`"]
 async fn records_and_queries_structured_audit_rows() -> TestResult<()> {
     let pool = pool().await?;
     reset_audit_schema(&pool).await?;
