@@ -8,7 +8,7 @@ TEST_DB_UP ?= 1
 .PHONY: fmt clippy test test-db test-db-postgres test-db-mysql test-db-all db-up db-up-postgres db-up-mysql db-down check clean
 
 fmt:
-	cargo fmt --all --check
+	cargo fmt --all
 
 clippy:
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -27,7 +27,7 @@ db-up-mysql:
 db-down:
 	$(DOCKER_COMPOSE) down --remove-orphans
 
-test-db: test-db-postgres
+test-db: test-db-all
 
 test-db-postgres:
 ifeq ($(TEST_DB_UP),1)

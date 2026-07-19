@@ -6,30 +6,33 @@ integration at the application boundary.
 
 ## Before you open a PR
 
+Install the pinned project tools once:
+
+```sh
+mise install
+```
+
 Run the local gates:
 
 ```sh
-make check
+mise run check
 ```
 
 When a change touches SQLx, migrations, or database queries, also run:
 
 ```sh
-make test-db
-```
-
-Rust and ast-grep versions are pinned in the repository's mise config:
-
-```sh
-mise install
+mise run test-db
 ```
 
 The structural Rust checks are documented in
 [`tools/ast-grep/README.md`](tools/ast-grep/README.md). Run them on their own
 with `mise run lint-structure`.
 
-CI runs on pull requests via Codeberg-hosted Forgejo Actions when runners are
-available. `make check` is the release gate either way.
+Run `mise run fmt` to format the workspace and `mise tasks` to list the
+available project commands.
+
+CI runs `mise run check` on pull requests via Codeberg-hosted Forgejo Actions
+when runners are available. The same command is the local release gate.
 
 ## Stability
 

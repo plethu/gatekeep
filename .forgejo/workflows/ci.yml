@@ -32,10 +32,10 @@ jobs:
             gates-
 
       - name: Run project gates
-        run: mise exec -- scripts/check-project-gates.sh
+        run: mise run check
 
       - name: Run database integration tests
-        run: mise exec -- make test-db-all
+        run: mise run test-db
 
       - name: Stop database services
         if: always()
