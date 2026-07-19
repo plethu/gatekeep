@@ -161,6 +161,7 @@ where
                 .map_err(GatekeepAxumError::PolicyHash)
                 .map_err(GatekeepRejection::from_error)?,
         };
+
         let required = required_facts(policy).into_iter().collect::<Vec<_>>();
         let facts = self
             .resolver
@@ -208,6 +209,7 @@ where
                 Some(context.principal.clone()),
             ),
         };
+
         let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
         let entry = AuditEntry {
             request_id: context.request_id.clone(),
@@ -225,6 +227,7 @@ where
                 AuditSubjects::Record => context.subjects.clone(),
             },
         };
+
         let summary = DecisionSummary {
             anchor: anchor.clone(),
             effect: EffectKind::from(decision),

@@ -35,6 +35,7 @@ fn assert_denial_metadata(
     else {
         return Err(TestError::Message("decision should deny"));
     };
+
     let Some(label) = label else {
         return Err(TestError::Message("denial should carry label"));
     };
@@ -54,6 +55,7 @@ fn assert_denial_fact_params(
     let Some(reason) = decision.denial_reason()? else {
         return Err(TestError::Message("decision should have denial reason"));
     };
+
     let facts = reason
         .params
         .values()
@@ -478,6 +480,7 @@ fn partial_any_pending_keeps_first_resolved_denial_metadata() -> Result<(), Test
     if !matches!(&reduced, Residual::Pending { .. }) {
         return Err(TestError::Message("unknown fact should keep any pending"));
     }
+
     let reduced = complete_residual(&reduced, &completed);
 
     assert_denial_metadata(&original, "first", Some("first_denied"), DenyShape::Hidden)?;
@@ -510,6 +513,7 @@ fn partial_or_else_pending_primary_keeps_fallback_denial_metadata() -> Result<()
             "unknown primary should keep or_else pending",
         ));
     }
+
     let reduced = complete_residual(&reduced, &completed);
 
     assert_denial_metadata(
@@ -582,6 +586,7 @@ fn residual_policy_introspection_detects_constants_and_obligations() -> Result<(
         obligations: vec![gatekeep::ObligationId::new("break_glass")?],
         reason: None,
     };
+
     let nested = ResidualPolicy::OrElse {
         primary: Box::new(deny.clone()),
         fallback: Box::new(obligated_grant.clone()),

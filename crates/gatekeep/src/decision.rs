@@ -121,6 +121,7 @@ impl<O: Serialize + Clone> Decision<O> {
             };
             params.insert(key, ReasonValue::Fact(fact.clone()));
         }
+
         if let Some(outcome) = denied {
             params.insert(
                 ParamKey::new("denied_outcome").map_err(TraceError::Identity)?,

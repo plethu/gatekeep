@@ -95,6 +95,7 @@ pub async fn assert_denial_response(
     if fields != DENIAL_BODY_FIELDS {
         return Err(DenialAssertError::Fields { actual: fields });
     }
+
     let body = serde_json::from_value::<DenialBody>(value).map_err(DenialAssertError::Json)?;
     if body.error != expected.error {
         return Err(DenialAssertError::Error {
@@ -102,6 +103,7 @@ pub async fn assert_denial_response(
             actual: body.error,
         });
     }
+
     if let Some(expected_message) = expected.message
         && body.message != expected_message
     {
@@ -110,6 +112,7 @@ pub async fn assert_denial_response(
             actual: body.message,
         });
     }
+
     match expected.reason {
         ExpectedReason::None if body.reason.is_some() => {
             return Err(DenialAssertError::Reason {
@@ -141,6 +144,7 @@ fn denial_body_fields(value: &serde_json::Value) -> Result<Vec<String>, DenialAs
     let serde_json::Value::Object(object) = value else {
         return Err(DenialAssertError::Shape);
     };
+
     let mut fields = object.keys().cloned().collect::<Vec<_>>();
     fields.sort();
     Ok(fields)

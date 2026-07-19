@@ -349,24 +349,29 @@ fn eval_any_by<O: Lattice, P>(
                 }
                 Some((current, _decisive)) => {
                     let joined = current.join(&outcome);
-                    if joined == *current && joined == outcome {
-                        union_obligations(&mut winning_obligations, arm.obligations);
-                    } else if joined == outcome {
-                        *current = joined;
-                        winning_obligations = arm.obligations;
-                        if let Some((_, decisive)) = &mut winning {
-                            *decisive = arm.decisive;
+                    match (joined == *current, joined == outcome) {
+                        (true, true) => {
+                            union_obligations(&mut winning_obligations, arm.obligations);
                         }
-                    } else if joined != *current {
-                        *current = joined.clone();
-                        union_obligations(&mut winning_obligations, arm.obligations);
-                        if let Some((_, decisive)) = &mut winning {
-                            *decisive = DecisiveClause::Permit {
-                                granted: joined,
-                                satisfied: Vec::new(),
-                                label: None,
-                            };
+                        (false, true) => {
+                            *current = joined;
+                            winning_obligations = arm.obligations;
+                            if let Some((_, decisive)) = &mut winning {
+                                *decisive = arm.decisive;
+                            }
                         }
+                        (false, false) => {
+                            *current = joined.clone();
+                            union_obligations(&mut winning_obligations, arm.obligations);
+                            if let Some((_, decisive)) = &mut winning {
+                                *decisive = DecisiveClause::Permit {
+                                    granted: joined,
+                                    satisfied: Vec::new(),
+                                    label: None,
+                                };
+                            }
+                        }
+                        (true, false) => {}
                     }
                 }
             },

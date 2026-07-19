@@ -193,6 +193,7 @@ async fn reset_audit_schema(pool: &MySqlPool) -> TestResult<()> {
     ] {
         sqlx::query(statement).execute(pool).await?;
     }
+
     for statement in include_str!("../migrations/mysql/0001_audit.sql").split(';') {
         if !statement.trim().is_empty() {
             sqlx::query(statement).execute(pool).await?;

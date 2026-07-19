@@ -153,6 +153,7 @@ fn authorized_list_partial_evaluation_defers_resource_facts() -> Result<(), Test
             "resource facts should remain as residual",
         ));
     };
+
     let residual_facts = required_residual_facts(residual)
         .into_iter()
         .map(|fact| fact.as_str().to_owned())

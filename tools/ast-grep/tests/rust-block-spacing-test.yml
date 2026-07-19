@@ -1,0 +1,83 @@
+id: rust-block-spacing
+valid:
+  - |
+    fn spaced_if() {
+        if true {
+            return;
+        }
+
+        let x = 1;
+    }
+  - |
+    fn spaced_let_else() {
+        let Ok(x) = foo() else {
+            return 0;
+        };
+
+        let y = 1;
+    }
+  - |
+    fn struct_then_let() {
+        let x = Foo {
+            a: 1,
+        };
+        let y = 2;
+    }
+  - |
+    fn spaced_nested(flag: bool) {
+        if flag {
+            if true {
+                return;
+            }
+
+            let x = 1;
+        }
+    }
+  - |
+    fn spaced_if_return() {
+        if true {
+            return;
+        }
+
+        return;
+    }
+invalid:
+  - |
+    fn tight_if() {
+        if true {
+            return;
+        }
+        let x = 1;
+    }
+  - |
+    fn tight_let_else() {
+        let Ok(x) = foo() else {
+            return 0;
+        };
+        let y = 1;
+    }
+  - |
+    fn tight_match_tail() {
+        match x {
+            Err(d) => {
+                return report(d);
+            }
+        }
+        let y = 1;
+    }
+  - |
+    fn tight_nested(flag: bool) {
+        if flag {
+            if true {
+                return;
+            }
+            let x = 1;
+        }
+    }
+  - |
+    fn tight_if_return() {
+        if true {
+            return;
+        }
+        return;
+    }

@@ -188,6 +188,7 @@ impl FluentCatalog {
         if reason.shape == DenyShape::Hidden {
             return self.try_render_hidden(locale);
         }
+
         for locale_key in self.locale_candidates(locale) {
             if let Some(rendered) = self.render_from_bundle(reason, &locale_key) {
                 return Some(rendered);
@@ -213,16 +214,20 @@ impl FluentCatalog {
 
     fn locale_candidates(&self, locale: &Locale) -> Vec<String> {
         let mut candidates = Vec::new();
-        push_locale_candidate(&mut candidates, locale.as_str());
-        if let Some((language, _rest)) = locale.as_str().split_once('-') {
-            push_locale_candidate(&mut candidates, language);
+        let fallback = self.fallback_locale.as_deref();
+        let ordered_candidates = [
+            Some(locale.as_str()),
+            locale
+                .as_str()
+                .split_once('-')
+                .map(|(language, _)| language),
+            fallback,
+            fallback.and_then(|value| value.split_once('-').map(|(language, _)| language)),
+        ];
+        for candidate in ordered_candidates.into_iter().flatten() {
+            push_locale_candidate(&mut candidates, candidate);
         }
-        if let Some(fallback_locale) = &self.fallback_locale {
-            push_locale_candidate(&mut candidates, fallback_locale);
-            if let Some((language, _rest)) = fallback_locale.split_once('-') {
-                push_locale_candidate(&mut candidates, language);
-            }
-        }
+
         candidates
     }
 

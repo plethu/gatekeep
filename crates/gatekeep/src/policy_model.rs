@@ -474,6 +474,7 @@ impl<O> ResidualPolicy<O> {
             Self::OrElse { primary, fallback } => {
                 let primary_output = primary.try_fold_pruned(should_descend, visitor)?;
                 let fallback_branch = ResidualPolicyBranch::OrElseFallback { primary, fallback };
+
                 let fallback_output = if should_descend(&fallback_branch) {
                     Some(fallback.try_fold_pruned(should_descend, visitor)?)
                 } else {

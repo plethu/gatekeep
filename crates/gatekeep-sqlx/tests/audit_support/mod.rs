@@ -22,6 +22,7 @@ pub fn audit_entry() -> Result<AuditEntry, GatekeepError> {
         params,
         shape: DenyShape::Forbidden,
     };
+
     let decisive = TraceClause::Deny {
         denied: None,
         unsatisfied: vec![missing.clone()],

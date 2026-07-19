@@ -116,6 +116,7 @@ fn reduce_policy<O: Lattice>(policy: &Policy<O>, facts: &PartialFacts) -> Reduce
                     obligations: obligations.clone(),
                     reason: reason.clone(),
                 };
+
                 let known = partial_to_known(facts);
                 let decision = evaluate(&residual, &known);
                 let decision = Decision {
@@ -239,6 +240,7 @@ fn reduce_any<O: Lattice>(policies: &[Policy<O>], facts: &PartialFacts) -> Reduc
         {
             return ReducedPolicy::Resolved(with_consulted(decision, consulted));
         }
+
         let known = partial_to_known(facts);
         let decision = evaluate_residual(&ResidualPolicy::Any(resolved_permits), &known);
         return ReducedPolicy::Resolved(with_consulted(decision, consulted));

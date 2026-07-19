@@ -295,6 +295,7 @@ where
         } else {
             BTreeSet::new()
         };
+
         let entries = bindings.into_iter().map(|binding| {
             let presence = match binding.query_presence {
                 QueryPresence::Resolve => relation_presence(

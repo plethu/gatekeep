@@ -101,6 +101,7 @@ async fn insert_children(
         .execute(&mut **tx)
         .await?;
     }
+
     for (position, (fact, presence)) in entry.consulted.iter().enumerate() {
         sqlx::query(
             "insert into gatekeep_audit_consulted_facts (decision_id, position, fact_id, presence) values (?, ?, ?, ?)",
@@ -112,6 +113,7 @@ async fn insert_children(
         .execute(&mut **tx)
         .await?;
     }
+
     for (slot, subject) in &entry.subjects {
         sqlx::query(
             "insert into gatekeep_audit_request_subjects (decision_id, slot, subject_kind, subject_id) values (?, ?, ?, ?)",
@@ -123,6 +125,7 @@ async fn insert_children(
         .execute(&mut **tx)
         .await?;
     }
+
     if let Some(reason) = &entry.denial_reason {
         for (key, value) in &reason.params {
             sqlx::query(

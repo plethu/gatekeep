@@ -92,6 +92,7 @@ async fn hidden_denial_uses_generic_not_found_response() -> Result<(), TestError
         policy: hidden_read_policy()?,
         context: context()?,
     };
+
     let app = Router::new()
         .route("/cases/123", get(hidden_handler))
         .with_state(state);
@@ -215,6 +216,7 @@ async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestErro
         release: tokio::sync::Mutex::new(Some(wait_for_release)),
         completed: Arc::clone(&completed),
     };
+
     let gatekeeper = Gatekeeper::new(StaticResolver {
         facts: KnownFacts::new().with_present::<CaseReader>(),
     })

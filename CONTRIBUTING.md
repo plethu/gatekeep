@@ -18,8 +18,15 @@ When a change touches SQLx, migrations, or database queries, also run:
 make test-db
 ```
 
-Tool versions are pinned in `.mise.toml` when present, or match `rust-version`
-in the workspace `Cargo.toml`.
+Rust and ast-grep versions are pinned in the repository's mise config:
+
+```sh
+mise install
+```
+
+The structural Rust checks are documented in
+[`tools/ast-grep/README.md`](tools/ast-grep/README.md). Run them on their own
+with `mise run lint-structure`.
 
 CI runs on pull requests via Codeberg-hosted Forgejo Actions when runners are
 available. `make check` is the release gate either way.

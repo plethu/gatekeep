@@ -205,6 +205,7 @@ fn lowered_filter_matches_in_memory_evaluation_for_sampled_rows() -> Result<(), 
     let Residual::Pending { residual, .. } = partial_evaluate(&policy, &partial) else {
         return Err(TestError::UnexpectedResolvedResidual);
     };
+
     let lowered = PgLowerer::new(Predicates).lower_filter(&residual, &cx()?)?;
     assert_eq!(
         lowered.to_postgres_sql(),
@@ -273,6 +274,7 @@ fn obligated_or_else_fallback_is_skipped_before_lowering() -> Result<(), TestErr
             reason: None,
         }),
     };
+
     let adapter = PgLowerer::new(Predicates);
 
     let filter = adapter.lower_filter(&residual, &cx()?)?;

@@ -386,6 +386,7 @@ fn lower_condition_set<B>(
     if conditions.is_empty() {
         return Ok(SqlxFragment::trusted(empty));
     }
+
     let fragments = conditions
         .iter()
         .map(lower)

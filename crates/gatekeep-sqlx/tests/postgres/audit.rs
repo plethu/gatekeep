@@ -59,6 +59,7 @@ async fn reset_audit_schema(pool: &PgPool) -> TestResult<()> {
     ] {
         sqlx::query(statement).execute(pool).await?;
     }
+
     for statement in include_str!("../../migrations/postgres/0001_audit.sql").split(';') {
         if !statement.trim().is_empty() {
             sqlx::query(statement).execute(pool).await?;
