@@ -31,8 +31,8 @@ with `mise run lint-structure`.
 Run `mise run fmt` to format the workspace and `mise tasks` to list the
 available project commands.
 
-CI runs `mise run check` on pull requests via Codeberg-hosted Forgejo Actions
-when runners are available. The same command is the local release gate.
+CI runs `mise run check` on pull requests via GitHub Actions. The same command
+is the local release gate.
 
 ## Stability
 
@@ -46,7 +46,17 @@ rustdoc and on docs.rs. Update both when you change public behaviour.
 
 ## Issues and pull requests
 
-Issues are welcome for bugs, doc gaps, and operational problems.
+Contributions are welcome, including bug reports, documentation improvements,
+and changes to the code. Open an issue before spending substantial time on a
+pull request so we can agree on the shape of the work before you implement it.
 
-Open an issue before spending time on a pull request so scope is clear before
-you implement it.
+Tools, including generative AI, may help you write code, tests, or
+documentation. You remain responsible for understanding and checking everything
+you submit. Interpersonal communication must be your own work: please write
+issue reports, pull request descriptions, review replies, and other comments
+yourself rather than generating them or pasting generated prose.
+
+A contribution is a conversation, not a drop-off. Please be willing to respond
+to questions, consider review feedback, and revise the work with the
+maintainers. A pull request does not need to arrive perfect; it does need
+someone present on the other side of it.

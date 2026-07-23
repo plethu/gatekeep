@@ -45,7 +45,7 @@ expectations in `gatekeep-sqlx` from this version onward.
 - Added SQL migrations for decision audit rows, consulted facts, obligations,
   request subjects, reason params, and outbox rows.
 
-- CI runs on pull requests via Codeberg-hosted Forgejo Actions.
+- CI runs on pull requests via GitHub Actions.
 - Depends on `keepsake` 1.0.
 
 ## [0.4.0] — 2026-06-23
@@ -123,7 +123,7 @@ Initial release of all five crates.
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
 
-[1.0.1]: https://codeberg.org/plethu/gatekeep/releases/tag/v1.0.1
-[0.4.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.4.0
-[0.2.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.2.0
-[0.1.0]: https://codeberg.org/plethu/gatekeep/releases/tag/v0.1.0
+[1.0.1]: https://github.com/plethu/gatekeep/releases/tag/v1.0.1
+[0.4.0]: https://github.com/plethu/gatekeep/releases/tag/v0.4.0
+[0.2.0]: https://github.com/plethu/gatekeep/releases/tag/v0.2.0
+[0.1.0]: https://github.com/plethu/gatekeep/releases/tag/v0.1.0
