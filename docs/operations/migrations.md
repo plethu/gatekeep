@@ -25,6 +25,12 @@ The bridge is additive and opt-in. Apply the Dovecote adapter's schema first,
 then the Gatekeep `0001_audit.sql` migration, then the backend's
 `0002_dovecote_bridge.sql`:
 
+Dovecote's MySQL/MariaDB schema creates validation triggers. The migration
+account needs trigger DDL authority; with MySQL binary logging enabled, an
+administrator may also need to enable `log_bin_trust_function_creators` for
+schema installation. Ordinary Gatekeep and bridge operations do not require
+that server setting after the schema is installed.
+
 | Backend | Bridge migration |
 | --- | --- |
 | Postgres | `crates/gatekeep-sqlx/migrations/postgres/0002_dovecote_bridge.sql` |
