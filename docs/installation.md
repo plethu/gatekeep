@@ -4,15 +4,15 @@ Add the core crate first. Add adapters only where the application needs them.
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
+gatekeep = "1.1"
 ```
 
 For an Axum request boundary:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-axum = "0.4"
+gatekeep = "1.1"
+gatekeep-axum = "1.1"
 ```
 
 For SQLx list filtering or durable decision audit, choose the database feature
@@ -20,25 +20,25 @@ used by the service:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-sqlx = { version = "0.4", features = ["postgres"] }
+gatekeep = "1.1"
+gatekeep-sqlx = { version = "1.1", features = ["postgres"] }
 ```
 
 For localized denial messages:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-fluent = "0.4"
+gatekeep = "1.1"
+gatekeep-fluent = "1.1"
 ```
 
 For entitlements or relation-backed facts stored in Keepsake:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-keepsake = "0.4"
-keepsake = "0.6"
+gatekeep = "1.1"
+gatekeep-keepsake = "1.1"
+keepsake = "1.1"
 ```
 
 ## Workspace Use

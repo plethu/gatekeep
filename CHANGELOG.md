@@ -2,11 +2,11 @@
 
 All notable changes to this project are documented here.
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-08-27
 
 ### `gatekeep-sqlx`
 
-- Added an opt-in Dovecote 1.1.0 migration bridge for Postgres, SQLite, and
+- Added an opt-in Dovecote migration bridge for Postgres, SQLite, and
   MySQL. Existing audit constructors and default `AuditSink` behavior remain
   legacy-only.
 - Added one-transaction legacy normalized audit plus pending Dovecote
@@ -140,7 +140,7 @@ Initial release of all five crates.
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
 
-[1.1.0]: https://github.com/plethu/gatekeep/compare/v1.0.1...HEAD
+[1.1.0]: https://github.com/plethu/gatekeep/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/plethu/gatekeep/releases/tag/v1.0.1
 [0.4.0]: https://github.com/plethu/gatekeep/releases/tag/v0.4.0
 [0.2.0]: https://github.com/plethu/gatekeep/releases/tag/v0.2.0

@@ -10,7 +10,7 @@ Enable the SQLx backend feature and run the matching migration:
 
 ```toml
 [dependencies]
-gatekeep-sqlx = { version = "0.4", features = ["postgres"] }
+gatekeep-sqlx = { version = "1.1", features = ["postgres"] }
 ```
 
 ```rust
