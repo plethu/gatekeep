@@ -11,6 +11,6 @@ mod error;
 mod response;
 pub mod test_support;
 
-pub use authorizer::{AuditSubjects, Authorized, Gatekeeper};
+pub use authorizer::{Authorized, Gatekeeper};
 pub use error::{GatekeepAxumError, GatekeepRejection};
 pub use response::{DenialBody, DenialError, DenialResponse, DenialResponseConfig};

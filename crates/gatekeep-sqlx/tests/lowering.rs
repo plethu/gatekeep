@@ -135,6 +135,7 @@ fn cx() -> Result<Context, GatekeepError> {
         subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-GB")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 

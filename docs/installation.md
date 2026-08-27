@@ -4,40 +4,40 @@ Add the core crate first. Add adapters only where the application needs them.
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
+gatekeep = "2.0"
 ```
 
 For an Axum request boundary:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-axum = "0.4"
+gatekeep = "2.0"
+gatekeep-axum = "2.0"
 ```
 
-For SQLx list filtering or durable decision audit, choose the database feature
-used by the service:
+For SQLx list filtering or Dovecote-backed durable decision audit, choose the
+database feature used by the service:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-sqlx = { version = "0.4", features = ["postgres"] }
+gatekeep = "2.0"
+gatekeep-sqlx = { version = "2.0", features = ["postgres"] }
 ```
 
 For localized denial messages:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-fluent = "0.4"
+gatekeep = "2.0"
+gatekeep-fluent = "2.0"
 ```
 
 For entitlements or relation-backed facts stored in Keepsake:
 
 ```toml
 [dependencies]
-gatekeep = "0.4"
-gatekeep-keepsake = "0.4"
+gatekeep = "2.0"
+gatekeep-keepsake = "2.0"
 keepsake = "0.6"
 ```
 
@@ -49,11 +49,9 @@ parallel request-only and list-only policy implementations.
 
 ## Database Setup
 
-`gatekeep-sqlx` includes migrations for durable decision audit:
-
-- `crates/gatekeep-sqlx/migrations/postgres/0001_audit.sql`
-- `crates/gatekeep-sqlx/migrations/sqlite/0001_audit.sql`
-- `crates/gatekeep-sqlx/migrations/mysql/0001_audit.sql`
-
-Run the migration for the backend you enable. SQL lowering itself does not
-require Gatekeep tables. Durable audit does.
+Install the selected Dovecote migration for durable audit. SQL lowering itself
+does not require Gatekeep tables, and a clean 2.0 installation requires no
+Gatekeep audit DDL. The historical files under
+`crates/gatekeep-sqlx/migrations/{postgres,sqlite,mysql}/0001_audit.sql` remain
+available only as immutable v1 upgrade sources; do not apply them to a clean
+2.0 database.

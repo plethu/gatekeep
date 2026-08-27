@@ -1,19 +1,18 @@
 //! MySQL-backed gatekeep `SQLx` differential tests.
 #![cfg(feature = "mysql-tests")]
 
-#[path = "audit_support/mod.rs"]
-mod audit_support;
+#[path = "mysql/dovecote_audit.rs"]
+mod dovecote_audit;
 
-use audit_support::audit_entry;
 use gatekeep::{
     Condition, Context, Effect, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, Presence,
     QueryLowering, StaticFactId, SubjectRef, TenantId, condition, evaluate_residual,
 };
 use gatekeep_sqlx::{
-    MySqlBackend, MySqlDecisionAuditRepository, SqlOutcome, SqlxAuditStore, SqlxFactPredicates,
-    SqlxFragment, SqlxLowerer, validate_database_url_for_backend,
+    MySqlBackend, SqlOutcome, SqlxFactPredicates, SqlxFragment, SqlxLowerer,
+    validate_database_url_for_backend,
 };
-use sqlx::{MySql, MySqlPool, QueryBuilder, Row, mysql::MySqlPoolOptions};
+use sqlx::{MySql, MySqlPool, QueryBuilder, mysql::MySqlPoolOptions};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 enum Tier {
@@ -98,48 +97,6 @@ async fn lowered_filters_and_grades_match_in_memory_residual_evaluation() -> Tes
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires docker mysql; run `mise exec -- just test-db-mysql`"]
-async fn records_and_queries_structured_audit_rows() -> TestResult<()> {
-    let pool = pool().await?;
-    reset_audit_schema(&pool).await?;
-    let repo = MySqlDecisionAuditRepository::new(pool.clone());
-    let entry = audit_entry()?;
-
-    let id = repo.record_decision_audit(&entry).await?;
-    let records = repo.decision_audit_records(None, 10).await?;
-
-    assert_eq!(
-        records,
-        vec![gatekeep_sqlx::DecisionAuditRecord { id, entry }]
-    );
-    assert_eq!(
-        scalar_i64(&pool, "select count(*) from gatekeep_audit_consulted_facts").await?,
-        2
-    );
-    assert_eq!(
-        scalar_i64(&pool, "select count(*) from gatekeep_audit_obligations").await?,
-        1
-    );
-    assert_eq!(
-        scalar_i64(
-            &pool,
-            "select count(*) from gatekeep_audit_request_subjects"
-        )
-        .await?,
-        1
-    );
-    assert_eq!(
-        scalar_i64(&pool, "select count(*) from gatekeep_audit_reason_params").await?,
-        2
-    );
-    assert_eq!(
-        scalar_i64(&pool, "select count(*) from gatekeep_audit_outbox").await?,
-        1
-    );
-    Ok(())
-}
-
 async fn selected_rows(
     pool: &MySqlPool,
     cx: &Context,
@@ -179,26 +136,6 @@ async fn reset_database(pool: &MySqlPool) -> TestResult<()> {
     )
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-async fn reset_audit_schema(pool: &MySqlPool) -> TestResult<()> {
-    for statement in [
-        "drop table if exists gatekeep_audit_outbox",
-        "drop table if exists gatekeep_audit_reason_params",
-        "drop table if exists gatekeep_audit_request_subjects",
-        "drop table if exists gatekeep_audit_obligations",
-        "drop table if exists gatekeep_audit_consulted_facts",
-        "drop table if exists gatekeep_audit_decisions",
-    ] {
-        sqlx::query(statement).execute(pool).await?;
-    }
-
-    for statement in include_str!("../migrations/mysql/0001_audit.sql").split(';') {
-        if !statement.trim().is_empty() {
-            sqlx::query(statement).execute(pool).await?;
-        }
-    }
     Ok(())
 }
 
@@ -269,6 +206,7 @@ fn cx() -> Result<Context, GatekeepError> {
         subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-GB")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 
@@ -305,17 +243,10 @@ const fn presence(value: bool) -> Presence {
     }
 }
 
-async fn scalar_i64(pool: &MySqlPool, sql: &'static str) -> TestResult<i64> {
-    let row = sqlx::query(sql).fetch_one(pool).await?;
-    Ok(row.try_get(0)?)
-}
-
 type TestResult<T> = core::result::Result<T, TestError>;
 
 #[derive(Debug, thiserror::Error)]
 enum TestError {
-    #[error(transparent)]
-    Audit(#[from] gatekeep_sqlx::SqlxAuditError),
     #[error(transparent)]
     Env(#[from] std::env::VarError),
     #[error(transparent)]

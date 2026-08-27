@@ -3,16 +3,15 @@
 //! This crate lowers a `gatekeep::ResidualPolicy` into trusted SQL fragments
 //! that can be appended to a `sqlx::QueryBuilder`.
 //!
-//! It also provides [`SqlxDecisionAuditRepository`], an async
-//! `gatekeep::AuditSink` implementation for Postgres, `SQLite`, and `MySQL`. Run
-//! the matching migration under `migrations/{postgres,sqlite,mysql}`, construct
-//! the backend repository alias such as [`PgDecisionAuditRepository`], and pass
-//! it to `gatekeep_axum::Gatekeeper::with_audit_sink`.
+//! It also provides Dovecote-backed `gatekeep::AuditSink` implementations for
+//! Postgres, `SQLite`, and `MySQL`. Run the selected Dovecote migration, call
+//! the adapter's `check_schema`, configure an application-owned absolute event
+//! source, and pass the sink to `gatekeep_axum::Gatekeeper`.
 //!
-//! Decision audit rows are stored with structured child rows for consulted
-//! facts, obligations, request subjects, and denial reason parameters. Each
-//! recorded decision also writes a `gatekeep_audit_outbox` row for downstream
-//! export workers.
+//! Gatekeep does not maintain a SQL audit table. Each decision is serialized as
+//! one complete Dovecote event with a pending delivery. Use the concrete
+//! `record_decision_audit_in_transaction` method when application writes and
+//! the audit event need one caller-owned transaction.
 
 #![forbid(unsafe_code)]
 
@@ -31,13 +30,17 @@ use gatekeep::{
 mod audit;
 mod fragment;
 
+pub use audit::{
+    DECISION_AUDIT_CONTENT_TYPE, DECISION_AUDIT_EVENT_TYPE, DEFAULT_AUDIT_STREAM,
+    DecisionAuditConfig, DecisionAuditConfigError, DecisionAuditDecodeError,
+    DecisionAuditEventError, decode_decision_audit,
+};
 #[cfg(feature = "mysql")]
-pub use audit::MySqlDecisionAuditRepository;
+pub use audit::{MySqlDovecoteAudit, MySqlDovecoteAuditError};
 #[cfg(feature = "postgres")]
-pub use audit::PgDecisionAuditRepository;
+pub use audit::{PgDovecoteAudit, PgDovecoteAuditError};
 #[cfg(feature = "sqlite")]
-pub use audit::SqliteDecisionAuditRepository;
-pub use audit::{DecisionAuditRecord, SqlxAuditError, SqlxAuditStore, SqlxDecisionAuditRepository};
+pub use audit::{SqliteDovecoteAudit, SqliteDovecoteAuditError};
 #[cfg(feature = "mysql")]
 pub use fragment::MySqlBackend;
 #[cfg(feature = "sqlite")]

@@ -20,9 +20,30 @@ pub enum GatekeepAxumError<Resolve, Audit> {
     /// Trace serialization failed after evaluation.
     #[error(transparent)]
     Trace(#[from] gatekeep::TraceError),
+    /// The captured decision occurrence could not cross the Dovecote time
+    /// boundary without changing its meaning.
+    #[error(transparent)]
+    Occurrence(#[from] gatekeep::DecisionAuditOccurrenceError),
     /// Audit recording failed.
     #[error("audit sink failed")]
-    Audit(#[source] Audit),
+    Audit {
+        /// Reusable identity and occurrence time for an ambiguous retry.
+        occurrence: gatekeep::DecisionAuditOccurrence,
+        /// Sink-specific failure.
+        #[source]
+        source: Audit,
+    },
+}
+
+impl<Resolve, Audit> GatekeepAxumError<Resolve, Audit> {
+    /// Returns the occurrence that was used when audit persistence failed.
+    #[must_use]
+    pub const fn audit_occurrence(&self) -> Option<&gatekeep::DecisionAuditOccurrence> {
+        match self {
+            Self::Audit { occurrence, .. } => Some(occurrence),
+            Self::PolicyHash(_) | Self::Resolve(_) | Self::Trace(_) | Self::Occurrence(_) => None,
+        }
+    }
 }
 
 /// Axum rejection returned by [`crate::Gatekeeper::authorize`].

@@ -3,7 +3,10 @@
 use std::{
     collections::BTreeMap,
     convert::Infallible,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -109,6 +112,38 @@ impl AuditSink for FailingAudit {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct FailOnceAudit {
+    entries: Arc<Mutex<Vec<AuditEntry>>>,
+    failed: Arc<AtomicBool>,
+}
+
+impl FailOnceAudit {
+    pub fn entries(&self) -> Result<Vec<AuditEntry>, RecordingError> {
+        self.entries
+            .lock()
+            .map_err(|_error| RecordingError::Poisoned)
+            .map(|entries| entries.clone())
+    }
+}
+
+#[async_trait]
+impl AuditSink for FailOnceAudit {
+    type Error = FailingAuditError;
+
+    async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
+        self.entries
+            .lock()
+            .map_err(|_error| FailingAuditError)?
+            .push(entry.clone());
+        if self.failed.swap(true, Ordering::SeqCst) {
+            Ok(())
+        } else {
+            Err(FailingAuditError)
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("audit write failed")]
 pub struct FailingAuditError;
@@ -194,6 +229,7 @@ pub fn context() -> Result<Context, gatekeep::GatekeepError> {
         subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-US")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 
@@ -201,6 +237,10 @@ pub fn context() -> Result<Context, gatekeep::GatekeepError> {
 pub enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] gatekeep::GatekeepError),
+    #[error(transparent)]
+    Occurrence(#[from] gatekeep::DecisionAuditOccurrenceError),
+    #[error(transparent)]
+    Time(#[from] time::error::ComponentRange),
     #[error(transparent)]
     Record(#[from] RecordingError),
     #[error(transparent)]
@@ -223,10 +263,18 @@ pub enum TestError {
     Join(#[from] tokio::task::JoinError),
     #[error("authorization failed")]
     Authorization,
+    #[error("audit failure did not return its occurrence")]
+    MissingAuditOccurrence,
 }
 
 impl From<GatekeepRejection<Infallible, RecordingError>> for TestError {
     fn from(_rejection: GatekeepRejection<Infallible, RecordingError>) -> Self {
+        Self::Authorization
+    }
+}
+
+impl From<GatekeepRejection<Infallible, Infallible>> for TestError {
+    fn from(_rejection: GatekeepRejection<Infallible, Infallible>) -> Self {
         Self::Authorization
     }
 }

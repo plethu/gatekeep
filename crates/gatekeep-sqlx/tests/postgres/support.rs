@@ -231,6 +231,7 @@ pub fn cx() -> Result<Context, GatekeepError> {
         subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-GB")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 
@@ -275,8 +276,6 @@ pub type TestResult<T> = core::result::Result<T, TestError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TestError {
-    #[error(transparent)]
-    Audit(#[from] gatekeep_sqlx::SqlxAuditError),
     #[error(transparent)]
     Env(#[from] std::env::VarError),
     #[error(transparent)]

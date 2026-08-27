@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    Decision, DenialReason, FactId, KnownFacts, Locale, ObligationId, PartialFacts, PolicyHash,
-    PolicyId, Presence, RequestId, ResidualPolicy, SubjectRef, SubjectSlot, TenantId, Trace,
-    TraceClause,
+    Decision, DecisionAuditId, DecisionAuditOccurrence, DenialReason, FactId, KnownFacts, Locale,
+    ObligationId, PartialFacts, PolicyHash, PolicyId, Presence, RequestId, ResidualPolicy,
+    SubjectRef, SubjectSlot, TenantId, Trace, TraceClause,
 };
 
 /// Request-scoped data passed to adapter boundaries.
@@ -24,6 +24,23 @@ pub struct Context {
     pub locale: Locale,
     /// Optional request identifier for audit sinks.
     pub request_id: Option<crate::RequestId>,
+    /// Optional decision occurrence supplied by the application for retry-safe
+    /// audit propagation. When absent, the authorization boundary captures
+    /// one after evaluation and before recording the audit entry. A caller
+    /// retaining this value can reuse both its identity and occurrence time
+    /// across an ambiguous retry.
+    #[serde(default)]
+    pub decision_audit_occurrence: Option<DecisionAuditOccurrence>,
+}
+
+impl Context {
+    /// Supplies the stable identity and occurrence time for a retryable
+    /// authorization operation.
+    #[must_use]
+    pub fn with_decision_audit_occurrence(mut self, occurrence: DecisionAuditOccurrence) -> Self {
+        self.decision_audit_occurrence = Some(occurrence);
+        self
+    }
 }
 
 /// Async boundary that resolves policy facts from application-owned storage.
@@ -205,6 +222,11 @@ pub struct DecisionSummary {
 /// Durable audit payload for a decision.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditEntry {
+    /// Stable identity of this decision occurrence, independent of storage
+    /// cursors and database-generated row ids.
+    pub decision_audit_id: DecisionAuditId,
+    /// Authoritative time at which the decision occurred.
+    pub occurred_at: time::OffsetDateTime,
     /// Request identifier supplied by the application boundary.
     pub request_id: Option<RequestId>,
     /// Policy version that produced the decision.
@@ -221,11 +243,13 @@ pub struct AuditEntry {
     pub denial_reason: Option<DenialReason>,
     /// Durable, non-generic decision trace.
     pub trace: Trace,
-    /// Optional tenant recorded by an opt-in sink.
-    pub tenant: Option<TenantId>,
-    /// Optional principal recorded by an opt-in sink.
-    pub principal: Option<SubjectRef>,
-    /// Optional named request subjects recorded by an opt-in sink.
+    /// Tenant selected by the application before resolution.
+    pub tenant: TenantId,
+    /// Principal selected by the application before resolution.
+    pub principal: SubjectRef,
+    /// Named request subjects selected by the application before resolution.
     #[serde(default)]
     pub subjects: BTreeMap<SubjectSlot, SubjectRef>,
+    /// Locale carried by the request context for a complete decision record.
+    pub locale: Locale,
 }

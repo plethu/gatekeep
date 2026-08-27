@@ -34,8 +34,9 @@ pub use decision::{
 pub use evaluate::{evaluate, evaluate_residual, required_facts, required_residual_facts};
 pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
-    ClauseLabel, Fact, FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec,
-    ParamKey, PolicyHash, PolicyId, ReasonCode, RequestId, StaticClauseLabel, StaticFactId,
+    ClauseLabel, DecisionAuditId, DecisionAuditOccurrence, DecisionAuditOccurrenceError, Fact,
+    FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec, ParamKey,
+    PolicyHash, PolicyId, ReasonCode, RequestId, StaticClauseLabel, StaticFactId,
     StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId, StaticSubjectSlot,
     StaticTenantId, SubjectRef, SubjectSlot, TenantId,
 };

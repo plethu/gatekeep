@@ -1,17 +1,17 @@
 # Audit Export
 
-`gatekeep-sqlx` writes one outbox row for each decision audit record. External
-workers can read from `gatekeep_audit_outbox` and deliver the serialized
-`AuditEntry` payload to Kafka, Restate, S3, warehouses, or support tooling.
+`gatekeep-sqlx` enqueues one Dovecote delivery for each decision audit record.
+External workers claim Dovecote deliveries and publish the projected
+CloudEvent.
 
 ## Delivery Contract
 
-Treat the database outbox as the stable integration boundary:
+Treat Dovecote as the stable integration boundary:
 
-- page rows by id
+- page and claim deliveries through the selected Dovecote adapter
 - deliver each payload to the external system
-- record downstream checkpoints outside Gatekeep
-- retry rows that were read but not accepted downstream
+- acknowledge only after the destination accepts the message
+- retry or release rows that were not accepted downstream
 
 Gatekeep does not include broker or object-storage clients. Keep those clients
 in the application worker so deployment, credentials, batching, and backoff
@@ -19,8 +19,9 @@ match the service.
 
 ## Payload Use
 
-Use structured decision tables for local queries and reporting. Use the outbox
-payload when the downstream system needs the full decision envelope.
+Decode the complete Dovecote event payload into `AuditEntry` for reporting.
+Gatekeep does not maintain structured child tables or bespoke delivery state.
 
 For high-volume exports, keep worker queries bounded and checkpoint by the last
-accepted outbox id.
+accepted Dovecote row id. Delivery is at least once: consumers deduplicate by
+CloudEvents `(source, id)`.

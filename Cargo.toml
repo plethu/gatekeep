@@ -24,6 +24,10 @@ async-trait = "0.1.89"
 axum = { version = "0.8.7", default-features = false, features = ["json", "tokio"] }
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", default-features = false, features = ["std"] }
+dovecote = { version = "0.1.0", path = "../../carrier/crates/dovecote" }
+dovecote-sqlx-mysql = { version = "0.1.0", path = "../../carrier/crates/dovecote-sqlx-mysql", default-features = false, features = ["runtime-tokio"] }
+dovecote-sqlx-postgres = { version = "0.1.0", path = "../../carrier/crates/dovecote-sqlx-postgres", default-features = false, features = ["runtime-tokio"] }
+dovecote-sqlx-sqlite = { version = "0.1.0", path = "../../carrier/crates/dovecote-sqlx-sqlite", default-features = false, features = ["runtime-tokio"] }
 fluent-bundle = "0.16.0"
 keepsake = "1.1.0"
 postcard = { version = "1.1.3", features = ["alloc"] }
@@ -35,7 +39,9 @@ thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.2", features = ["util"] }
 unic-langid = "0.9.6"
-uuid = "1.18.1"
+uuid = { version = "1.18.1", features = ["v7"] }
+time = { version = "0.3.41", features = ["formatting", "macros", "parsing", "serde"] }
+url = "2.5.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

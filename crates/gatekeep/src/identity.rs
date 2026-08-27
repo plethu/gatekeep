@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
+use time::{OffsetDateTime, UtcOffset};
 
 /// Result type used by gatekeep constructors and validators.
 pub type GatekeepResult<T> = Result<T, GatekeepError>;
@@ -15,10 +16,24 @@ pub enum GatekeepError {
         /// Name of the identifier field that failed validation.
         field: &'static str,
     },
+    /// An identifier uses a prefix reserved for imported legacy identities.
+    #[error("{field} uses the reserved prefix {prefix:?}")]
+    ReservedIdentifierPrefix {
+        /// Name of the identifier field that failed validation.
+        field: &'static str,
+        /// Prefix reserved for migration identities.
+        prefix: &'static str,
+    },
     /// Locale input was not a simple BCP 47-style tag.
     #[error("invalid locale tag: {value}")]
     InvalidLocale {
         /// Rejected locale value.
+        value: String,
+    },
+    /// A legacy decision identity was missing the migration namespace.
+    #[error("invalid imported legacy decision audit id: {value}")]
+    InvalidLegacyIdentifier {
+        /// Rejected imported identity.
         value: String,
     },
     /// A policy model record failed structural validation.
@@ -33,6 +48,11 @@ fn validate_identifier(field: &'static str, value: impl Into<String>) -> Gatekee
     let value = value.into();
     if value.trim().is_empty() {
         Err(GatekeepError::EmptyIdentifier { field })
+    } else if field == "decision_audit_id" && value.starts_with("legacy-") {
+        Err(GatekeepError::ReservedIdentifierPrefix {
+            field,
+            prefix: "legacy-",
+        })
     } else {
         Ok(value)
     }
@@ -163,8 +183,112 @@ owned_id!(PolicyHash, "policy_hash");
 owned_id!(PolicyId, "policy_id");
 owned_id!(ReasonCode, "reason_code");
 owned_id!(RequestId, "request_id");
+owned_id!(DecisionAuditId, "decision_audit_id");
 owned_id!(SubjectSlot, "subject_slot");
 owned_id!(TenantId, "tenant_id");
+
+impl DecisionAuditId {
+    /// Generates a new sortable identifier for one decision occurrence.
+    ///
+    /// Generate this once at the authorization or application orchestration
+    /// boundary and retain it when the owning operation is retried. The
+    /// identifier is a domain identity, not a database row id.
+    #[must_use]
+    pub fn generate() -> Self {
+        Self::from_trusted(uuid::Uuid::now_v7().to_string())
+    }
+
+    /// Constructs an identity while importing a legacy decision audit record.
+    ///
+    /// The `legacy-` namespace is reserved so ordinary new decision identities
+    /// cannot collide with imported history. This escape hatch is intentionally
+    /// named for migration code; new decisions must use [`Self::new`] or
+    /// [`Self::generate`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GatekeepError::InvalidLegacyIdentifier`] unless `value` has
+    /// the exact, case-sensitive `legacy-` prefix and a non-empty suffix.
+    pub fn from_legacy_import(value: impl Into<String>) -> GatekeepResult<Self> {
+        let value = value.into();
+        if value
+            .strip_prefix("legacy-")
+            .is_some_and(|suffix| !suffix.is_empty())
+        {
+            Ok(Self::from_trusted(value))
+        } else {
+            Err(GatekeepError::InvalidLegacyIdentifier { value })
+        }
+    }
+}
+
+/// The stable identity and authoritative occurrence time for one decision.
+///
+/// Applications may construct and retain this value at their authorization
+/// orchestration boundary. Reusing it for an ambiguous retry keeps both the
+/// `CloudEvents` identity and the serialized occurrence time unchanged.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionAuditOccurrence {
+    /// Stable identity of the decision occurrence.
+    pub decision_audit_id: DecisionAuditId,
+    /// Occurrence time normalized to UTC at exact microsecond precision.
+    pub occurred_at: OffsetDateTime,
+}
+
+impl DecisionAuditOccurrence {
+    /// Validates and normalizes a decision occurrence for Dovecote storage.
+    ///
+    /// Dovecote's portable instant range starts at the Unix epoch and ends at
+    /// the final microsecond of 9999-12-31. Sub-microsecond values are
+    /// truncated once, before serialization, so a retry cannot silently
+    /// change the durable event bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionAuditOccurrenceError`] when the time is outside the
+    /// portable range.
+    pub fn new(
+        decision_audit_id: DecisionAuditId,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Self, DecisionAuditOccurrenceError> {
+        const MAX_PORTABLE_UNIX_SECONDS: i64 = 253_402_300_799;
+        if decision_audit_id.as_str().starts_with("legacy-") {
+            return Err(DecisionAuditOccurrenceError::ReservedLegacyIdentity);
+        }
+
+        let seconds = occurred_at.unix_timestamp();
+        if !(0..=MAX_PORTABLE_UNIX_SECONDS).contains(&seconds) {
+            return Err(DecisionAuditOccurrenceError::OutOfRange);
+        }
+
+        let nanosecond = occurred_at.nanosecond();
+        let normalized_nanosecond = nanosecond - (nanosecond % 1_000);
+        if seconds == MAX_PORTABLE_UNIX_SECONDS && normalized_nanosecond > 999_999_000 {
+            return Err(DecisionAuditOccurrenceError::OutOfRange);
+        }
+
+        let normalized = occurred_at
+            .replace_nanosecond(normalized_nanosecond)
+            .map_err(|_| DecisionAuditOccurrenceError::OutOfRange)?;
+
+        Ok(Self {
+            decision_audit_id,
+            occurred_at: normalized.to_offset(UtcOffset::UTC),
+        })
+    }
+}
+
+/// Validation failure for a decision occurrence crossing the SQL audit
+/// boundary.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum DecisionAuditOccurrenceError {
+    /// Imported legacy identities cannot be used for new occurrences.
+    #[error("legacy decision identities are valid only while importing history")]
+    ReservedLegacyIdentity,
+    /// The occurrence is outside Dovecote's portable instant range.
+    #[error("decision occurrence is outside Dovecote's portable instant range")]
+    OutOfRange,
+}
 
 static_id!(StaticFactId, FactId);
 static_id!(StaticClauseLabel, ClauseLabel);

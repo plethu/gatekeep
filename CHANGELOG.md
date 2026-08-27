@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.0] - Unreleased
+
+Gatekeep 2.0 is a breaking release. Durable SQL decision audit now uses
+Dovecote as its sole maintained event and delivery model.
+
+### `gatekeep`
+
+- Added typed `DecisionAuditId` values, generated before persistence and
+  reusable across retries.
+- Added authoritative decision occurrence time to `AuditEntry`.
+
+### `gatekeep-axum`
+
+- Captures occurrence time once after evaluation at the authorization boundary.
+- Added a closure-based clock seam for deterministic tests; no public clock
+  trait is required.
+
+### `gatekeep-sqlx`
+
+- Replaced Gatekeep-owned audit repositories and child/outbox tables with
+  Dovecote-backed `PgDovecoteAudit`, `SqliteDovecoteAudit`, and
+  `MySqlDovecoteAudit` sinks.
+- Added concrete caller-owned transaction methods and preserved typed Dovecote
+  validation, idempotency, and transient errors through adapter errors.
+- Retained the v1 audit migrations as immutable upgrade artifacts only.
+
 ## [1.0.1] - 2026-07-12
 
 ### Reliability

@@ -3,7 +3,7 @@
 `gatekeep-sqlx` has two jobs:
 
 - lower residual policies into trusted SQL fragments
-- store and query durable decision audit records
+- serialize typed decisions into Dovecote events and deliveries
 
 ## Query Lowering
 
@@ -14,29 +14,31 @@ adapter renders a backend-aware fragment for a `sqlx::QueryBuilder`.
 Keep schema knowledge in the application. Fact predicates should be static or
 constructed from trusted code paths, with user values passed as SQLx binds.
 
-## Audit Repository
+## Dovecote Audit Sink
 
-`SqlxDecisionAuditRepository<B>` records and queries decision audit rows for a
-backend marker `B`.
+The Dovecote audit sinks serialize one complete `AuditEntry` and enqueue it in
+the selected Dovecote schema. History is read through Dovecote paging, not a
+Gatekeep-owned query repository.
 
-Backend aliases:
-
-| Alias | Backend |
+| Sink | Backend |
 | --- | --- |
-| `PgDecisionAuditRepository` | Postgres |
-| `SqliteDecisionAuditRepository` | SQLite |
-| `MySqlDecisionAuditRepository` | MySQL |
+| `PgDovecoteAudit` | Postgres |
+| `SqliteDovecoteAudit` | SQLite |
+| `MySqlDovecoteAudit` | MySQL and MariaDB |
 
-The repository implements `gatekeep::AuditSink`, so it can be passed to
-`gatekeep_axum::Gatekeeper::with_audit_sink`.
+Each sink implements `gatekeep::AuditSink`, so it can be passed to
+`gatekeep_axum::Gatekeeper::with_audit_sink`. The constructor requires an
+application-owned absolute event source. The default stream is
+`gatekeep-audit`, the event type is `gatekeep.decision_audit_recorded`, and the
+content type is `application/json`.
+
+For an existing application transaction, call the backend-specific
+`record_decision_audit_in_transaction` method. The caller owns commit and
+rollback; the event is atomic with other writes in that transaction, not with
+arbitrary business-state writes made elsewhere.
 
 ## Migrations
 
-Use the migration for the enabled backend:
-
-- `migrations/postgres/0001_audit.sql`
-- `migrations/sqlite/0001_audit.sql`
-- `migrations/mysql/0001_audit.sql`
-
-The schema includes decision, consulted fact, obligation, request subject,
-reason parameter, and outbox tables.
+Install Dovecote's migration for the enabled backend. The old Gatekeep
+migration files remain only for v1 upgrade and reconciliation and are not part
+of the 2.0 runtime schema.

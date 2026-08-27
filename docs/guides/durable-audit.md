@@ -1,8 +1,8 @@
 # Durable Audit
 
 Durable audit records let a service explain an authorization decision after the
-request is gone. `gatekeep-sqlx` stores decision rows, structured child rows,
-and an outbox row for each recorded decision.
+request is gone. Gatekeep keeps the typed decision in one complete JSON
+Dovecote event; Dovecote owns its durable event and delivery lifecycle.
 
 ## Setup
 
@@ -10,33 +10,37 @@ Enable the SQLx backend feature and run the matching migration:
 
 ```toml
 [dependencies]
-gatekeep-sqlx = { version = "0.4", features = ["postgres"] }
+gatekeep-sqlx = { version = "2.0", features = ["postgres"] }
 ```
 
 ```rust
 use gatekeep_axum::Gatekeeper;
-use gatekeep_sqlx::PgDecisionAuditRepository;
+use gatekeep_sqlx::PgDovecoteAudit;
 
-let audit = PgDecisionAuditRepository::new(pool.clone());
+let audit = PgDovecoteAudit::new(pool.clone(), "https://auth.example.test/gatekeep")?;
+audit.check_schema().await?;
 let gatekeeper = Gatekeeper::new(policy).with_audit_sink(audit);
 ```
 
-The repository implements `gatekeep::AuditSink`. It can also query stored
-records for review and support tooling.
+The sink implements `gatekeep::AuditSink`. For an existing application
+transaction, call the backend-specific
+`record_decision_audit_in_transaction` method. The caller owns commit and
+rollback; this is atomic with other writes in that transaction, not with
+arbitrary business-state writes made elsewhere.
 
 ## Stored Data
 
-The schema stores:
+The Dovecote schema stores:
 
-- one decision row with request, policy, effect, and trace data
-- consulted fact rows
-- obligation rows
-- request subject rows
-- denial reason parameter rows
-- one `gatekeep_audit_outbox` row
+- one immutable event containing the complete typed decision JSON
+- the selected tenant, principal, locale, request id, and named subjects
+- one mutable pending delivery
+- event identity `gatekeep-audit-<decision_audit_id>`
+- configured absolute source, `gatekeep-audit` stream, and
+  `gatekeep.decision_audit_recorded` type
 
-Use structured rows for search and reporting. Use the serialized audit payload
-when an export worker needs the full decision envelope.
+Use Dovecote live or snapshot paging for history and decode its JSON payload
+into `AuditEntry`. Do not add Gatekeep-owned child tables or a second outbox.
 
 ## Failure Handling
 
@@ -46,3 +50,15 @@ only when the audit sink accepted the record, or surface the adapter error.
 
 Use `NoopAuditSink` only for applications where durable authorization audit is
 out of scope.
+
+## Installation and migration
+
+For a new 2.0 installation, install the application's domain schema and the
+selected Dovecote schema, call `check_schema`, configure the source, and use
+the ordinary sink. No Gatekeep audit migration is required.
+
+For a v1 upgrade, retain the historical `gatekeep-sqlx` audit tables as
+read-only migration sources through the rollback window. Install Dovecote and
+import the complete history, including delivered decisions, with the Dovecote
+migration importer. Never drop the old tables automatically. The shipped v1
+SQL files are release artifacts and must remain byte-identical.

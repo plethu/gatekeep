@@ -31,9 +31,10 @@ belongs in a reason catalog such as `gatekeep-fluent`, not in the policy value.
 
 ## Audit Entries
 
-`AuditEntry` stores the decision envelope:
+`AuditEntry` stores the complete decision envelope:
 
-- request id and subjects
+- stable `decision_audit_id` and authoritative `occurred_at`
+- tenant, principal, locale, request id, and named subjects
 - policy anchor
 - effect
 - obligations
@@ -41,9 +42,17 @@ belongs in a reason catalog such as `gatekeep-fluent`, not in the policy value.
 - decisive clause and trace data
 - denial reason parameters
 
+`DecisionAuditId::new` reserves the exact, case-sensitive `legacy-` prefix for
+migration identities. Imported legacy events use that namespace deliberately;
+new decision identities must use another value. `DecisionAuditId::generate()`
+continues to generate UUIDv7 identities and is unaffected by the reservation.
+
 The core `AuditSink` trait is async because durable audit usually performs IO.
 `NoopAuditSink` is available for applications that do not record decisions, and
 the test feature exposes `InMemoryAuditSink` for assertions.
 
-`gatekeep-sqlx` provides a queryable SQL audit repository. The Axum adapter
-awaits the audit sink before returning the authorization result.
+`gatekeep-sqlx` serializes this value into one Dovecote event and pending
+delivery. Dovecote owns SQL persistence, claiming, retries, and paging; the
+Axum adapter awaits the audit sink before returning the authorization result.
+Consumers deduplicate at-least-once publication with CloudEvents `(source,
+id)`.

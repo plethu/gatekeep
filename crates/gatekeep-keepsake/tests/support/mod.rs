@@ -193,6 +193,7 @@ pub fn context(tenant: &str, principal: SubjectRef) -> Result<Context, GatekeepE
         subjects: BTreeMap::new(),
         locale: Locale::new("en-US")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 
@@ -207,6 +208,7 @@ pub fn context_with_subjects(
         subjects,
         locale: Locale::new("en-US")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 

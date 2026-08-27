@@ -55,6 +55,7 @@ pub fn request_context() -> Result<Context, GatekeepError> {
         subjects: std::collections::BTreeMap::new(),
         locale: Locale::new("en-US")?,
         request_id: None,
+        decision_audit_occurrence: None,
     })
 }
 

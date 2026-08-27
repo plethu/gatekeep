@@ -20,15 +20,21 @@ For durable audit with Postgres:
 
 ```rust
 use gatekeep_axum::Gatekeeper;
-use gatekeep_sqlx::PgDecisionAuditRepository;
+use gatekeep_sqlx::PgDovecoteAudit;
 
-let audit = PgDecisionAuditRepository::new(pg_pool.clone());
+let audit = PgDovecoteAudit::new(pg_pool.clone(), "https://auth.example.test/gatekeep")?;
+audit.check_schema().await?;
 let gatekeeper = Gatekeeper::new(policy).with_audit_sink(audit);
 ```
 
 The audit sink is awaited before the response is returned. If audit persistence
 fails, the request reports the adapter error and no successful authorization
-result leaves the boundary.
+result leaves the boundary. Each entry contains a stable decision identity and
+one authoritative occurrence time. A caller that may retry an ambiguous write
+can supply the same `DecisionAuditOccurrence` in its `Context`; the successful
+authorization result and audit-persistence error also return that value for
+retention by the owning operation. The default clock is internal to the
+adapter.
 
 ## Denial Responses
 

@@ -42,6 +42,8 @@ async fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> 
         &KnownFacts::new(),
     );
     let entry = AuditEntry {
+        decision_audit_id: gatekeep::DecisionAuditId::new("decision-1")?,
+        occurred_at: time::OffsetDateTime::UNIX_EPOCH,
         request_id: None,
         anchor: PolicyAnchor {
             policy_id: PolicyId::new("case_read")?,
@@ -53,9 +55,10 @@ async fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> 
         decisive: decision.to_trace()?.decisive,
         denial_reason: decision.denial_reason()?,
         trace: decision.to_trace()?,
-        tenant: Some(TenantId::new("tenant_a")?),
-        principal: Some(SubjectRef::new("user", "mari")?),
+        tenant: TenantId::new("tenant_a")?,
+        principal: SubjectRef::new("user", "mari")?,
         subjects: BTreeMap::new(),
+        locale: Locale::new("en-US")?,
     };
 
     sink.record(&entry).await?;
@@ -76,6 +79,7 @@ fn context_subject_slots_round_trip() -> Result<(), TestError> {
         )]),
         locale: Locale::new("en-US")?,
         request_id: None,
+        decision_audit_occurrence: None,
     };
 
     let encoded = serde_json::to_string(&context)?;

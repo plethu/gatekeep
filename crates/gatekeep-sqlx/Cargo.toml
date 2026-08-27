@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-sqlx"
-version = "1.0.1"
+version = "2.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -15,23 +15,29 @@ documentation = "https://docs.rs/gatekeep-sqlx"
 
 [features]
 default = ["postgres"]
-postgres = ["sqlx/postgres", "sqlx/time", "sqlx/uuid"]
-sqlite = ["sqlx/sqlite", "sqlx/time", "sqlx/uuid"]
-mysql = ["sqlx/mysql", "sqlx/time", "sqlx/uuid"]
+postgres = ["sqlx/postgres", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-postgres"]
+sqlite = ["sqlx/sqlite", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-sqlite"]
+mysql = ["sqlx/mysql", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-mysql"]
 postgres-tests = ["postgres", "sqlx/runtime-tokio"]
 sqlite-tests = ["sqlite", "sqlx/runtime-tokio"]
 mysql-tests = ["mysql", "sqlx/runtime-tokio"]
 
 [dependencies]
 async-trait.workspace = true
-gatekeep = { path = "../gatekeep", version = "1.0.0" }
+gatekeep = { path = "../gatekeep", version = "2.0.0" }
+dovecote = { workspace = true, optional = true }
+dovecote-sqlx-mysql = { workspace = true, optional = true }
+dovecote-sqlx-postgres = { workspace = true, optional = true }
+dovecote-sqlx-sqlite = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, features = ["json", "time", "uuid"] }
 thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
+time.workspace = true
 tokio.workspace = true
 
 [lints]

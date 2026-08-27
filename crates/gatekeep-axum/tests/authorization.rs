@@ -10,9 +10,11 @@ use axum::{
     response::Response,
     routing::get,
 };
-use gatekeep::{KnownFacts, Policy, PolicyId, condition, policy};
+use gatekeep::{
+    DecisionAuditId, DecisionAuditOccurrence, KnownFacts, Policy, PolicyId, condition, policy,
+};
 use gatekeep_axum::{
-    AuditSubjects, DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
+    DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
     test_support::{DenialAssertError, ExpectedDenial, assert_denial_response},
 };
 use std::sync::{
@@ -20,9 +22,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use support::{
-    Access, CaseReader, FailingAudit, RecordingAudit, RecordingObserver, ShapeAwareCatalog,
-    StaticCatalog, StaticResolver, TestError, context, hidden_read_policy, read_policy,
+    Access, CaseReader, FailOnceAudit, FailingAudit, RecordingAudit, RecordingObserver,
+    ShapeAwareCatalog, StaticCatalog, StaticResolver, TestError, context, hidden_read_policy,
+    read_policy,
 };
+use time::OffsetDateTime;
 use tokio::sync::oneshot;
 use tower::ServiceExt;
 
@@ -34,8 +38,7 @@ async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
         facts: KnownFacts::new().with_present::<CaseReader>(),
     })
     .with_audit_sink(audit.clone())
-    .with_observer(observer.clone())
-    .with_audit_subjects(AuditSubjects::Record);
+    .with_observer(observer.clone());
     let policy = read_policy()?;
     let context = context()?;
 
@@ -46,11 +49,99 @@ async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
     assert_eq!(authorized.outcome, Access::Full);
     let entries = audit.entries()?;
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].tenant, Some(context.tenant));
-    assert_eq!(entries[0].principal, Some(context.principal));
+    assert_eq!(entries[0].tenant, context.tenant);
+    assert_eq!(entries[0].principal, context.principal);
     let summaries = observer.summaries()?;
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].consulted.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn audit_identity_and_occurrence_time_are_captured_once() -> Result<(), TestError> {
+    let audit = RecordingAudit::default();
+    let decision_audit_id = DecisionAuditId::new("decision-retry-1")?;
+    let occurred_at = OffsetDateTime::UNIX_EPOCH + time::Duration::microseconds(42);
+    let occurrence = DecisionAuditOccurrence::new(decision_audit_id.clone(), occurred_at)?;
+    let gatekeeper = Gatekeeper::new(StaticResolver {
+        facts: KnownFacts::new().with_present::<CaseReader>(),
+    })
+    .with_audit_sink(audit.clone());
+    let context = context()?.with_decision_audit_occurrence(occurrence);
+
+    let authorized = gatekeeper
+        .authorize(PolicyId::new("case_read")?, &read_policy()?, context)
+        .await?;
+
+    let entries = audit.entries()?;
+    assert_eq!(entries[0].decision_audit_id, decision_audit_id);
+    assert_eq!(entries[0].occurred_at, occurred_at);
+    assert_eq!(authorized.audit_occurrence.occurred_at, occurred_at);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ordinary_clock_is_normalized_to_microseconds() -> Result<(), TestError> {
+    let before = OffsetDateTime::now_utc();
+    let authorized = Gatekeeper::new(StaticResolver {
+        facts: KnownFacts::new().with_present::<CaseReader>(),
+    })
+    .authorize(PolicyId::new("case_read")?, &read_policy()?, context()?)
+    .await?;
+    let after = OffsetDateTime::now_utc();
+    let before_microsecond = before.replace_nanosecond(before.nanosecond() / 1_000 * 1_000)?;
+
+    assert!(authorized.audit_occurrence.occurred_at >= before_microsecond);
+    assert!(authorized.audit_occurrence.occurred_at <= after);
+    assert_eq!(
+        authorized.audit_occurrence.occurred_at.nanosecond() % 1_000,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn ambiguous_audit_failure_replays_the_same_identity_time_and_bytes() -> Result<(), TestError>
+{
+    let audit = FailOnceAudit::default();
+    let gatekeeper = Gatekeeper::new(StaticResolver {
+        facts: KnownFacts::new().with_present::<CaseReader>(),
+    })
+    .with_audit_sink(audit.clone());
+    let policy_id = PolicyId::new("case_read")?;
+    let policy = read_policy()?;
+    let context = context()?;
+
+    let first_rejection = match gatekeeper
+        .authorize(policy_id.clone(), &policy, context.clone())
+        .await
+    {
+        Ok(_authorized) => return Err(TestError::ExpectedBoundaryError),
+        Err(rejection) => rejection,
+    };
+    let occurrence = match first_rejection {
+        GatekeepRejection::Error(error) => error
+            .audit_occurrence()
+            .cloned()
+            .ok_or(TestError::MissingAuditOccurrence)?,
+        GatekeepRejection::Denied(_) => return Err(TestError::ExpectedBoundaryError),
+    };
+
+    let authorized = gatekeeper
+        .authorize(
+            policy_id,
+            &policy,
+            context.with_decision_audit_occurrence(occurrence.clone()),
+        )
+        .await
+        .map_err(|_rejection| TestError::Authorization)?;
+    let entries = audit.entries()?;
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        serde_json::to_vec(&entries[0])?,
+        serde_json::to_vec(&entries[1])?
+    );
+    assert_eq!(authorized.audit_occurrence, occurrence);
     Ok(())
 }
 

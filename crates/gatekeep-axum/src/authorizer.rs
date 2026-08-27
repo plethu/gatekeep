@@ -1,23 +1,15 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use gatekeep::{
-    AuditEntry, AuditSink, Context, Decision, DecisionSummary, DecisiveClause, DenyShape, Effect,
-    EffectKind, FactResolver, IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver,
-    Policy, PolicyAnchor, PolicyId, PolicyObserver, ReasonCatalog, evaluate, required_facts,
+    AuditEntry, AuditSink, Context, Decision, DecisionAuditId, DecisionAuditOccurrence,
+    DecisionSummary, DecisiveClause, DenyShape, Effect, EffectKind, FactResolver,
+    IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver, Policy, PolicyAnchor,
+    PolicyId, PolicyObserver, ReasonCatalog, evaluate, required_facts,
 };
 use serde::Serialize;
+use time::OffsetDateTime;
 
 use crate::{DenialResponseConfig, GatekeepAxumError, GatekeepRejection};
-
-/// Whether audit entries should include request subject identifiers.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AuditSubjects {
-    /// Leave tenant and principal identifiers out of audit entries.
-    #[default]
-    Omit,
-    /// Copy tenant and principal identifiers from the request context.
-    Record,
-}
 
 /// Successful authorization result returned to handlers.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +18,9 @@ pub struct Authorized<O> {
     pub outcome: O,
     /// Full decision returned by the pure evaluator.
     pub decision: Decision<O>,
+    /// Stable identity and occurrence time used by the durable audit record.
+    /// Retain this value when an owning operation may need to retry.
+    pub audit_occurrence: DecisionAuditOccurrence,
 }
 
 /// Axum-friendly authorization boundary.
@@ -35,7 +30,7 @@ pub struct Gatekeeper<R, A = NoopAuditSink, C = IdentityReasonCatalog, W = NoopP
     reason_catalog: Arc<C>,
     observer: Arc<W>,
     denial_response: DenialResponseConfig,
-    audit_subjects: AuditSubjects,
+    clock: Arc<dyn Fn() -> OffsetDateTime + Send + Sync>,
 }
 
 impl<R, A, C, W> Clone for Gatekeeper<R, A, C, W> {
@@ -46,7 +41,7 @@ impl<R, A, C, W> Clone for Gatekeeper<R, A, C, W> {
             reason_catalog: Arc::clone(&self.reason_catalog),
             observer: Arc::clone(&self.observer),
             denial_response: self.denial_response.clone(),
-            audit_subjects: self.audit_subjects,
+            clock: Arc::clone(&self.clock),
         }
     }
 }
@@ -61,7 +56,7 @@ impl<R> Gatekeeper<R> {
             reason_catalog: Arc::new(IdentityReasonCatalog),
             observer: Arc::new(NoopPolicyObserver),
             denial_response: DenialResponseConfig::default(),
-            audit_subjects: AuditSubjects::default(),
+            clock: Arc::new(OffsetDateTime::now_utc),
         }
     }
 }
@@ -79,7 +74,7 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
             reason_catalog: self.reason_catalog,
             observer: self.observer,
             denial_response: self.denial_response,
-            audit_subjects: self.audit_subjects,
+            clock: self.clock,
         }
     }
 
@@ -95,7 +90,7 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
             reason_catalog: Arc::new(reason_catalog),
             observer: self.observer,
             denial_response: self.denial_response,
-            audit_subjects: self.audit_subjects,
+            clock: self.clock,
         }
     }
 
@@ -111,7 +106,7 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
             reason_catalog: self.reason_catalog,
             observer: Arc::new(observer),
             denial_response: self.denial_response,
-            audit_subjects: self.audit_subjects,
+            clock: self.clock,
         }
     }
 
@@ -119,13 +114,6 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
     #[must_use]
     pub fn with_denial_response(mut self, denial_response: DenialResponseConfig) -> Self {
         self.denial_response = denial_response;
-        self
-    }
-
-    /// Controls whether audit entries include tenant and principal identifiers.
-    #[must_use]
-    pub const fn with_audit_subjects(mut self, audit_subjects: AuditSubjects) -> Self {
-        self.audit_subjects = audit_subjects;
         self
     }
 }
@@ -171,12 +159,17 @@ where
             .map_err(GatekeepRejection::from_error)?;
         let decision = evaluate(policy, &facts);
 
-        self.observe_and_audit(&anchor, &decision, &context)
+        let audit_occurrence = self
+            .observe_and_audit(&anchor, &decision, &context)
             .await
             .map_err(GatekeepRejection::from_error)?;
 
         match decision.effect.clone() {
-            Effect::Permit(outcome) => Ok(Authorized { outcome, decision }),
+            Effect::Permit(outcome) => Ok(Authorized {
+                outcome,
+                decision,
+                audit_occurrence,
+            }),
             Effect::Deny => {
                 let reason = decision
                     .denial_reason()
@@ -198,20 +191,21 @@ where
         anchor: &PolicyAnchor,
         decision: &Decision<O>,
         context: &Context,
-    ) -> Result<(), GatekeepAxumError<R::Error, A::Error>>
+    ) -> Result<DecisionAuditOccurrence, GatekeepAxumError<R::Error, A::Error>>
     where
         O: Serialize + Clone + Sync,
     {
-        let (tenant, principal) = match self.audit_subjects {
-            AuditSubjects::Omit => (None, None),
-            AuditSubjects::Record => (
-                Some(context.tenant.clone()),
-                Some(context.principal.clone()),
-            ),
-        };
-
+        let supplied_occurrence = context.decision_audit_occurrence.clone();
+        let occurrence = supplied_occurrence
+            .map_or_else(
+                || DecisionAuditOccurrence::new(DecisionAuditId::generate(), (self.clock)()),
+                |value| DecisionAuditOccurrence::new(value.decision_audit_id, value.occurred_at),
+            )
+            .map_err(GatekeepAxumError::Occurrence)?;
         let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
         let entry = AuditEntry {
+            decision_audit_id: occurrence.decision_audit_id.clone(),
+            occurred_at: occurrence.occurred_at,
             request_id: context.request_id.clone(),
             anchor: anchor.clone(),
             effect: EffectKind::from(decision),
@@ -220,12 +214,10 @@ where
             decisive: trace.decisive.clone(),
             denial_reason: decision.denial_reason().map_err(GatekeepAxumError::Trace)?,
             trace,
-            tenant,
-            principal,
-            subjects: match self.audit_subjects {
-                AuditSubjects::Omit => BTreeMap::default(),
-                AuditSubjects::Record => context.subjects.clone(),
-            },
+            tenant: context.tenant.clone(),
+            principal: context.principal.clone(),
+            subjects: context.subjects.clone(),
+            locale: context.locale.clone(),
         };
 
         let summary = DecisionSummary {
@@ -237,10 +229,13 @@ where
         self.audit_sink
             .record(&entry)
             .await
-            .map_err(GatekeepAxumError::Audit)?;
+            .map_err(|source| GatekeepAxumError::Audit {
+                occurrence: occurrence.clone(),
+                source,
+            })?;
 
         self.observer.observe(&summary);
-        Ok(())
+        Ok(occurrence)
     }
 }
 
