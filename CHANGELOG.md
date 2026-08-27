@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-08-27
 
 Gatekeep 2.0 is a breaking release. Durable SQL decision audit now uses
 Dovecote as its sole maintained event and delivery model.
@@ -27,6 +27,23 @@ Dovecote as its sole maintained event and delivery model.
 - Added concrete caller-owned transaction methods and preserved typed Dovecote
   validation, idempotency, and transient errors through adapter errors.
 - Retained the v1 audit migrations as immutable upgrade artifacts only.
+
+## [1.1.0] - 2026-08-27
+
+### `gatekeep-sqlx`
+
+- Added an opt-in Dovecote migration bridge for Postgres, SQLite, and MySQL.
+  Existing audit constructors and default `AuditSink` behavior remain
+  legacy-only.
+- Added one-transaction legacy normalized audit plus pending Dovecote
+  dual-write APIs, persisted publisher identity mappings, and bounded,
+  resumable complete-history import with delivered-state preservation and
+  claim fencing.
+- Added additive `0002_dovecote_bridge.sql` migrations. Historical `0001`
+  migration bytes remain unchanged.
+
+See [the Dovecote bridge guide](docs/guides/dovecote-bridge.md) for feature
+selection and rollout semantics.
 
 ## [1.0.1] - 2026-07-12
 
@@ -148,6 +165,9 @@ Initial release of all five crates.
 - `QueryPresence` for marking selected facts unknown during partial evaluation
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
+
+[2.0.0]: https://github.com/plethu/gatekeep/compare/v1.1.0...v2.0.0
+[1.1.0]: https://github.com/plethu/gatekeep/compare/v1.0.1...v1.1.0
 
 [1.0.1]: https://github.com/plethu/gatekeep/releases/tag/v1.0.1
 [0.4.0]: https://github.com/plethu/gatekeep/releases/tag/v0.4.0

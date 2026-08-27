@@ -38,7 +38,7 @@ For entitlements or relation-backed facts stored in Keepsake:
 [dependencies]
 gatekeep = "2.0"
 gatekeep-keepsake = "2.0"
-keepsake = "0.6"
+keepsake = "2.0"
 ```
 
 ## Workspace Use
