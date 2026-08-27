@@ -10,6 +10,12 @@ Call the Dovecote adapter's `check_schema` before enabling authorization audit.
 Do not apply a Gatekeep audit migration: clean 2.0 has no Gatekeep-owned audit
 tables.
 
+Dovecote's MySQL/MariaDB schema creates validation triggers. The migration
+account needs trigger DDL authority; with MySQL binary logging enabled, an
+administrator may also need to enable `log_bin_trust_function_creators` for
+schema installation. Ordinary Gatekeep operations do not require that server
+setting after the schema is installed.
+
 ## v1 upgrade
 
 Keep the published Gatekeep audit migrations and source rows intact through the
