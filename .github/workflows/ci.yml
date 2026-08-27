@@ -19,6 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Check out the reviewed Dovecote revision
+        uses: actions/checkout@v6
+        with:
+          repository: plethu/dovecote
+          ref: 7c7af2a383c32b75d5bd5ac04d33d6f448994db8
+          path: .ci/dovecote
+
+      - name: Expose Dovecote at the local path used by Cargo
+        run: ln -s "$GITHUB_WORKSPACE/.ci/dovecote" "$GITHUB_WORKSPACE/../carrier"
+
       - name: Install project tools
         uses: jdx/mise-action@v4
 
