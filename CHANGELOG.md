@@ -42,8 +42,8 @@ Dovecote as its sole maintained event and delivery model.
 - Added additive `0002_dovecote_bridge.sql` migrations. Historical `0001`
   migration bytes remain unchanged.
 
-See [the Dovecote bridge guide](docs/guides/dovecote-bridge.md) for feature
-selection and rollout semantics.
+See [the Dovecote bridge guide](https://github.com/plethu/gatekeep/blob/v1.1.0/docs/guides/dovecote-bridge.md)
+for feature selection and rollout semantics.
 
 ## [1.0.1] - 2026-07-12
 
