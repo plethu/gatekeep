@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: plethu/dovecote
-          ref: 9ce40db3abe0d7b0cb2746ddc341c6a162e5c9f9
+          ref: b24003eea374037a64941326b6ce3e4b9518915f
           path: .ci/dovecote
 
       - name: Expose Dovecote at the local path used by Cargo
