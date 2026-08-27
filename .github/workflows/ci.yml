@@ -37,7 +37,7 @@ jobs:
           path: .ci/keepsake
 
       - name: Expose Keepsake 2 at the local path used by Cargo
-        run: ln -s "$GITHUB_WORKSPACE/.ci/keepsake" "$GITHUB_WORKSPACE/../keepsake-dovecote-2"
+        run: ln -s "$GITHUB_WORKSPACE/.ci/keepsake" "$GITHUB_WORKSPACE/../keepsake-rs"
 
       - name: Install project tools
         uses: jdx/mise-action@v4
