@@ -7,6 +7,12 @@ use sqlx::Pool;
 
 use crate::GatekeepSqlxBackend;
 
+#[cfg(any(
+    feature = "dovecote-postgres",
+    feature = "dovecote-sqlite",
+    feature = "dovecote-mysql"
+))]
+mod bridge;
 #[cfg(feature = "mysql")]
 mod mysql;
 #[cfg(feature = "postgres")]
@@ -15,10 +21,29 @@ mod postgres;
 mod sqlite;
 mod support;
 
+#[cfg(any(
+    feature = "dovecote-postgres",
+    feature = "dovecote-sqlite",
+    feature = "dovecote-mysql"
+))]
+pub use self::bridge::{
+    BRIDGE_PAYLOAD_CODEC, BRIDGE_PAYLOAD_PROVENANCE_DUAL_WRITE,
+    BRIDGE_PAYLOAD_PROVENANCE_LEGACY_JSON_VALUE, BRIDGE_PAYLOAD_PROVENANCE_LEGACY_TEXT,
+    BridgeConfigError, BridgeEventError, BridgeImportOptions, BridgeImportReport,
+    BridgePublication, BridgeWriteOutcome, DEFAULT_DOVECOTE_STREAM, DovecoteAuditBridge,
+    GATEKEEP_AUDIT_EVENT_TYPE, LegacyOutboxClaim, encode_audit_entry_v1,
+    encode_reconstructed_audit_v1,
+};
+#[cfg(feature = "dovecote-mysql")]
+pub use self::mysql::MySqlBridgeError;
 #[cfg(feature = "mysql")]
 pub use self::mysql::MySqlDecisionAuditRepository;
 #[cfg(feature = "postgres")]
 pub use self::postgres::PgDecisionAuditRepository;
+#[cfg(feature = "dovecote-postgres")]
+pub use self::postgres::PostgresBridgeError;
+#[cfg(feature = "dovecote-sqlite")]
+pub use self::sqlite::SqliteBridgeError;
 #[cfg(feature = "sqlite")]
 pub use self::sqlite::SqliteDecisionAuditRepository;
 

@@ -13,6 +13,10 @@
 //! facts, obligations, request subjects, and denial reason parameters. Each
 //! recorded decision also writes a `gatekeep_audit_outbox` row for downstream
 //! export workers.
+//!
+//! The opt-in `dovecote-*` features add explicit transaction-bound dual-write
+//! and complete-history import methods. They do not change the default audit
+//! path or claim ownership of the legacy outbox publisher.
 
 #![forbid(unsafe_code)]
 
@@ -31,12 +35,31 @@ use gatekeep::{
 mod audit;
 mod fragment;
 
+#[cfg(feature = "dovecote-mysql")]
+pub use audit::MySqlBridgeError;
 #[cfg(feature = "mysql")]
 pub use audit::MySqlDecisionAuditRepository;
 #[cfg(feature = "postgres")]
 pub use audit::PgDecisionAuditRepository;
+#[cfg(feature = "dovecote-postgres")]
+pub use audit::PostgresBridgeError;
+#[cfg(feature = "dovecote-sqlite")]
+pub use audit::SqliteBridgeError;
 #[cfg(feature = "sqlite")]
 pub use audit::SqliteDecisionAuditRepository;
+#[cfg(any(
+    feature = "dovecote-postgres",
+    feature = "dovecote-sqlite",
+    feature = "dovecote-mysql"
+))]
+pub use audit::{
+    BRIDGE_PAYLOAD_CODEC, BRIDGE_PAYLOAD_PROVENANCE_DUAL_WRITE,
+    BRIDGE_PAYLOAD_PROVENANCE_LEGACY_JSON_VALUE, BRIDGE_PAYLOAD_PROVENANCE_LEGACY_TEXT,
+    BridgeConfigError, BridgeEventError, BridgeImportOptions, BridgeImportReport,
+    BridgePublication, BridgeWriteOutcome, DEFAULT_DOVECOTE_STREAM, DovecoteAuditBridge,
+    GATEKEEP_AUDIT_EVENT_TYPE, LegacyOutboxClaim, encode_audit_entry_v1,
+    encode_reconstructed_audit_v1,
+};
 pub use audit::{DecisionAuditRecord, SqlxAuditError, SqlxAuditStore, SqlxDecisionAuditRepository};
 #[cfg(feature = "mysql")]
 pub use fragment::MySqlBackend;

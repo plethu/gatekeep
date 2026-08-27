@@ -9,6 +9,12 @@
 Rust values, a pure deterministic core evaluates them, and every decision
 carries the reasons that produced it.
 
+The project keeps policy in Rust. A policy is an ordinary, typed value that can
+be composed, tested, serialized, and hashed alongside application code. An
+external policy language can be the right shared contract across services or
+teams; gatekeep targets the case where Rust owns the model and the policy
+should remain visible to the compiler and ordinary tests.
+
 ## Documentation
 
 - [docs/](docs/README.md) — guides and reference for integrators
@@ -21,20 +27,7 @@ carries the reasons that produced it.
 Read [Combining permit outcomes](docs/concepts/lattice-outcomes.md) before designing
 graded access such as redacted/full records or scope unions.
 
-## Where it fits
-
-Use gatekeep for an in-process authorization boundary authored in Rust, by the
-team that owns the application. Policies are composable combinators over a
-frozen set of facts, evaluated synchronously with no IO, so a decision replays
-exactly from its inputs.
-
-It is not a policy DSL, an authentication or session layer, or a network policy
-service; those stay with the application or with crates built for them. Because
-each policy is reified as inspectable data, gatekeep can serialize, hash, diff,
-and explain a decision. It can also answer "which resources can this principal
-reach?", not just "may this principal reach this one?".
-
-## Usage
+## A policy
 
 ```rust
 use gatekeep::{
@@ -87,6 +80,15 @@ fn read_access() -> GatekeepResult<()> {
 }
 ```
 
+The application resolves facts before evaluation. Gatekeep is an in-process
+authorization boundary; it does not authenticate requests, manage sessions or
+tenancy, provide a network policy service, or define a separate policy DSL.
+Those concerns remain with application code or a crate built for them.
+
+Each policy is inspectable data. Gatekeep can serialize and hash it, explain a
+decision, and answer "which resources can this principal reach?", not just "may
+this principal reach this one?".
+
 Partial evaluation reuses the same policy value with `PartialFacts`: mark
 request-known facts as present or absent, leave resource-level facts unknown,
 then lower the residual policy in an application-owned adapter. For SQL-backed
@@ -115,17 +117,15 @@ Use the matching migration under `gatekeep-sqlx/migrations/{postgres,sqlite,mysq
 Export workers can page `gatekeep_audit_outbox` by id and transform the stored
 `AuditEntry` payload for Kafka, Restate, S3, or warehouse ingestion.
 
+For an explicit migration to Dovecote, enable the matching opt-in Dovecote
+feature (`dovecote-postgres`, `dovecote-sqlite`, or `dovecote-mysql`; `dovecote`
+enables all three) and follow the [Dovecote migration bridge guide](docs/guides/dovecote-bridge.md).
+The existing audit path and legacy outbox publisher remain unchanged until the
+application chooses to cut over.
+
 For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [docs.rs](https://docs.rs/gatekeep-sqlx) and the
 [`axum-authorized-list`](examples/axum-authorized-list) example.
-
-## Why it exists
-
-The Rust authz ecosystem leans on external DSLs. A policy DSL is worth its
-overhead across many services and for non-engineer authors; for a single Rust
-service it mostly adds cost: a second language, the domain re-encoded as entities
-and attributes, and typos that fail at runtime instead of compile time. gatekeep
-keeps policies in Rust and reifies them as data, so they stay analyzable.
 
 ## License
 

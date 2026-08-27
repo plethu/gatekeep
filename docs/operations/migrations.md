@@ -19,6 +19,34 @@ The migration creates:
 - `gatekeep_audit_reason_params`
 - `gatekeep_audit_outbox`
 
+## Dovecote bridge (1.1.0)
+
+The bridge is additive and opt-in. Apply the Dovecote adapter's schema first,
+then the Gatekeep `0001_audit.sql` migration, then the backend's
+`0002_dovecote_bridge.sql`:
+
+| Backend | Bridge migration |
+| --- | --- |
+| Postgres | `crates/gatekeep-sqlx/migrations/postgres/0002_dovecote_bridge.sql` |
+| SQLite | `crates/gatekeep-sqlx/migrations/sqlite/0002_dovecote_bridge.sql` |
+| MySQL | `crates/gatekeep-sqlx/migrations/mysql/0002_dovecote_bridge.sql` |
+
+The bridge migration adds a single fenced importer state row and immutable
+identity ledgers for legacy outbox rows and normalized decision rows without an
+outbox. It does not alter or delete the historical audit tables. See the
+[Dovecote bridge guide](../guides/dovecote-bridge.md) for rollout, import, and
+publisher ownership rules.
+
+The ledgers store payload bytes together with provenance, the
+`gatekeep-audit-json-v1` codec name, and a SHA-256 digest. This makes the
+canonical JSON reconstruction of pre-bridge JSON/JSONB rows explicit, while
+dual-write rows and SQLite text rows retain their original bridge/export bytes.
+The importer walks normalized decision IDs, so a decision row without an
+outbox is still migrated: it receives a `gatekeep-audit-legacy-<decision id>`
+identity in the separate `gatekeep_dovecote_bridge_audit` migration ledger and
+remains pending. That ledger has no publisher claim columns and is not a second
+delivery queue.
+
 Apply the migration with the same migration tool used by the application. Keep
 Gatekeep migrations in the service's normal database rollout so audit writes are
 available before the adapter is enabled.

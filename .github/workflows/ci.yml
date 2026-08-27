@@ -36,7 +36,7 @@ jobs:
       - name: Run project gates
         run: mise run check
 
-      - name: Run database integration tests
+      - name: Run backend and Dovecote bridge database tests
         run: mise run test-db
 
       - name: Stop database services

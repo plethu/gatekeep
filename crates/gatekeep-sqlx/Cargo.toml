@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-sqlx"
-version = "1.0.1"
+version = "1.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -21,14 +21,25 @@ mysql = ["sqlx/mysql", "sqlx/time", "sqlx/uuid"]
 postgres-tests = ["postgres", "sqlx/runtime-tokio"]
 sqlite-tests = ["sqlite", "sqlx/runtime-tokio"]
 mysql-tests = ["mysql", "sqlx/runtime-tokio"]
+dovecote = ["dovecote-postgres", "dovecote-sqlite", "dovecote-mysql"]
+dovecote-postgres = ["postgres", "dep:dovecote", "dep:dovecote-sqlx-postgres", "dep:sha2", "dep:uuid"]
+dovecote-sqlite = ["sqlite", "dep:dovecote", "dep:dovecote-sqlx-sqlite", "dep:sha2", "dep:uuid"]
+dovecote-mysql = ["mysql", "dep:dovecote", "dep:dovecote-sqlx-mysql", "dep:sha2", "dep:uuid"]
 
 [dependencies]
 async-trait.workspace = true
-gatekeep = { path = "../gatekeep", version = "1.0.0" }
+gatekeep = { path = "../gatekeep", version = "1.1.0" }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = { workspace = true, optional = true }
 sqlx = { workspace = true, features = ["json", "time", "uuid"] }
 thiserror.workspace = true
+time.workspace = true
+dovecote = { package = "dovecote", path = "../../../carrier/crates/dovecote", version = "0.1.0", optional = true }
+dovecote-sqlx-postgres = { package = "dovecote-sqlx-postgres", path = "../../../carrier/crates/dovecote-sqlx-postgres", version = "0.1.0", optional = true }
+dovecote-sqlx-sqlite = { package = "dovecote-sqlx-sqlite", path = "../../../carrier/crates/dovecote-sqlx-sqlite", version = "0.1.0", optional = true }
+dovecote-sqlx-mysql = { package = "dovecote-sqlx-mysql", path = "../../../carrier/crates/dovecote-sqlx-mysql", version = "0.1.0", optional = true }
+uuid = { workspace = true, features = ["v4"], optional = true }
 
 [dev-dependencies]
 serde.workspace = true

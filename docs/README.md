@@ -31,6 +31,7 @@ access such as redacted/full records or scope unions.
 - [Axum authorization](guides/axum-authorization.md)
 - [SQLx list filtering](guides/sqlx-list-filtering.md)
 - [Durable audit](guides/durable-audit.md)
+- [Dovecote migration bridge](guides/dovecote-bridge.md)
 - [Keepsake entitlements](guides/keepsake-entitlements.md)
 
 ## Reference

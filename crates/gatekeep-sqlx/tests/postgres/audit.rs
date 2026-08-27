@@ -50,6 +50,9 @@ async fn records_and_queries_structured_audit_rows() -> TestResult<()> {
 
 async fn reset_audit_schema(pool: &PgPool) -> TestResult<()> {
     for statement in [
+        "drop table if exists gatekeep_dovecote_bridge_audit",
+        "drop table if exists gatekeep_dovecote_bridge_outbox",
+        "drop table if exists gatekeep_dovecote_bridge_state",
         "drop table if exists gatekeep_audit_outbox",
         "drop table if exists gatekeep_audit_reason_params",
         "drop table if exists gatekeep_audit_request_subjects",
