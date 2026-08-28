@@ -2,12 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [3.0.0] - Unreleased
-
-Gatekeep 3.0 is a breaking release prepared for the coordinated Dovecote 0.2
-and Keepsake 3 tenant-aware contracts. It is implementation state only until
-the release gates and sibling revisions are reviewed; no publication is
-implied by this entry.
+## [3.0.0] - 2026-08-28
 
 ### `gatekeep`
 
