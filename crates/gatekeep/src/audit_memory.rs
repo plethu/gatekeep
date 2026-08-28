@@ -3,11 +3,14 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::{AuditEntry, AuditSink};
+use crate::{AuditEntry, AuditEntryError, AuditSink};
 
 /// Error returned by the in-memory audit sink.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum InMemoryAuditError {
+    /// The entry was not a valid current decision record.
+    #[error(transparent)]
+    InvalidEntry(#[from] AuditEntryError),
     /// The shared test buffer was poisoned by a previous panic.
     #[error("in-memory audit sink buffer is poisoned")]
     Poisoned,
@@ -41,6 +44,7 @@ impl AuditSink for InMemoryAuditSink {
     type Error = InMemoryAuditError;
 
     async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
+        entry.validate_current()?;
         self.entries
             .lock()
             .map_err(|_| InMemoryAuditError::Poisoned)?

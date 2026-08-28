@@ -1,9 +1,10 @@
 //! Gatekeep `SQLx` lowering tests.
 
 use gatekeep::{
-    Condition, Context, Effect, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale,
-    PartialFacts, Presence, QueryLowering, Residual, StaticFactId, SubjectRef, TenantId, condition,
-    evaluate, partial_evaluate, policy,
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Condition, Context,
+    Effect, EvidenceDigest, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, PartialFacts,
+    Presence, QueryLowering, Residual, StaticFactId, SubjectRef, TenantBinding,
+    TenantBindingEvidence, TenantId, condition, evaluate, partial_evaluate, policy,
 };
 #[cfg(feature = "sqlite")]
 use gatekeep_sqlx::SqliteBackend;
@@ -11,7 +12,10 @@ use gatekeep_sqlx::SqliteBackend;
 use gatekeep_sqlx::validate_database_url_for_backend;
 #[cfg(feature = "mysql")]
 use gatekeep_sqlx::{MySqlBackend, SqlxFactPredicates, SqlxFragment, SqlxLowerer};
-use gatekeep_sqlx::{PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome};
+use gatekeep_sqlx::{
+    PgFactPredicates, PgFragment, PgLowerer, PgValue, SqlOutcome, TenantColumn, TenantColumnError,
+    TenantIdentifierPart,
+};
 use gatekeep_sqlx::{SqlxDriver, infer_enabled_driver_from_url};
 #[cfg(all(feature = "sqlite", not(feature = "mysql")))]
 use gatekeep_sqlx::{SqlxFactPredicates, SqlxFragment, SqlxLowerer};
@@ -128,15 +132,29 @@ impl SqlxFactPredicates<MySqlBackend> for Predicates {
     }
 }
 
-fn cx() -> Result<Context, GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef::new("user", "subject-1")?,
-        subjects: std::collections::BTreeMap::new(),
-        locale: Locale::new("en-GB")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+fn cx() -> Result<Context, TestError> {
+    let now = time::OffsetDateTime::UNIX_EPOCH;
+    let tenant = TenantId::new("tenant-1")?;
+    let binding = ApplicationVerifiedTenantBinding::new(
+        tenant.clone(),
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now,
+        now + time::Duration::hours(1),
+    )?;
+    Ok(Context::new_at(
+        tenant,
+        TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "subject-1")?,
+        Locale::new("en-GB")?,
+        now,
+    )?)
 }
 
 #[test]
@@ -157,15 +175,16 @@ fn lowers_partial_residual_to_filter_and_grade() -> Result<(), TestError> {
         return Err(TestError::UnexpectedResolvedResidual);
     };
 
-    let lowered = PgLowerer::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower(&residual, &cx()?)?;
 
     assert_eq!(
         lowered.filter.to_postgres_sql(),
-        "((cases.shared) IS TRUE) OR ((cases.owner_id = $1) IS TRUE)"
+        "(cases.tenant_id = $1) AND (((cases.shared) IS TRUE) OR ((cases.owner_id = $2) IS TRUE))"
     );
     assert_eq!(
         lowered.grade.to_postgres_sql(),
-        "GREATEST(CASE WHEN (cases.shared) IS TRUE THEN $1 ELSE NULL END, CASE WHEN (cases.owner_id = $2) IS TRUE THEN $3 ELSE NULL END)"
+        "CASE WHEN (cases.tenant_id = $1) AND (TRUE) THEN GREATEST(CASE WHEN (cases.shared) IS TRUE THEN $2 ELSE NULL END, CASE WHEN (cases.owner_id = $3) IS TRUE THEN $4 ELSE NULL END) ELSE NULL END"
     );
     Ok(())
 }
@@ -181,7 +200,8 @@ fn lower_filter_reports_unlowerable_facts() -> Result<(), TestError> {
         reason: None,
     };
 
-    let error = PgLowerer::new(Predicates).lower_filter(&residual, &cx()?);
+    let error = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower_filter(&residual, &cx()?);
 
     let Err(error) = error else {
         return Err(TestError::ExpectedUnlowerableFact);
@@ -207,10 +227,11 @@ fn lowered_filter_matches_in_memory_evaluation_for_sampled_rows() -> Result<(), 
         return Err(TestError::UnexpectedResolvedResidual);
     };
 
-    let lowered = PgLowerer::new(Predicates).lower_filter(&residual, &cx()?)?;
+    let lowered = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower_filter(&residual, &cx()?)?;
     assert_eq!(
         lowered.to_postgres_sql(),
-        "((cases.shared) IS TRUE) OR ((cases.owner_id = $1) IS TRUE)"
+        "(cases.tenant_id = $1) AND (((cases.shared) IS TRUE) OR ((cases.owner_id = $2) IS TRUE))"
     );
 
     for (shared, owner) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -246,11 +267,12 @@ fn deny_trace_arm_does_not_make_any_projection_unlowerable() -> Result<(), TestE
         },
     ]);
 
-    let lowered = PgLowerer::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower(&residual, &cx()?)?;
 
     assert_eq!(
         lowered.grade.to_postgres_sql(),
-        "GREATEST(NULL, CASE WHEN (cases.owner_id = $1) IS TRUE THEN $2 ELSE NULL END)"
+        "CASE WHEN (cases.tenant_id = $1) AND (TRUE) THEN GREATEST(NULL, CASE WHEN (cases.owner_id = $2) IS TRUE THEN $3 ELSE NULL END) ELSE NULL END"
     );
     Ok(())
 }
@@ -276,16 +298,22 @@ fn obligated_or_else_fallback_is_skipped_before_lowering() -> Result<(), TestErr
         }),
     };
 
-    let adapter = PgLowerer::new(Predicates);
+    let adapter = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?);
 
     let filter = adapter.lower_filter(&residual, &cx()?)?;
     let lowered = adapter.lower(&residual, &cx()?)?;
 
-    assert_eq!(filter.to_postgres_sql(), "(cases.shared) IS TRUE");
-    assert_eq!(lowered.filter.to_postgres_sql(), "(cases.shared) IS TRUE");
+    assert_eq!(
+        filter.to_postgres_sql(),
+        "(cases.tenant_id = $1) AND ((cases.shared) IS TRUE)"
+    );
+    assert_eq!(
+        lowered.filter.to_postgres_sql(),
+        "(cases.tenant_id = $1) AND ((cases.shared) IS TRUE)"
+    );
     assert_eq!(
         lowered.grade.to_postgres_sql(),
-        "CASE WHEN (cases.shared) IS TRUE THEN $1 ELSE NULL END"
+        "CASE WHEN (cases.tenant_id = $1) AND (TRUE) THEN CASE WHEN (cases.shared) IS TRUE THEN $2 ELSE NULL END ELSE NULL END"
     );
     Ok(())
 }
@@ -310,7 +338,8 @@ fn fragments_append_to_sqlx_query_builder_with_stable_bind_order() -> Result<(),
             reason: None,
         },
     ]);
-    let lowered = PgLowerer::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower(&residual, &cx()?)?;
     let mut builder = QueryBuilder::<Postgres>::new("SELECT ");
 
     lowered.grade.push_to(&mut builder);
@@ -320,7 +349,7 @@ fn fragments_append_to_sqlx_query_builder_with_stable_bind_order() -> Result<(),
     let query = builder.build();
     assert_eq!(
         query.sql().as_str(),
-        "SELECT GREATEST(CASE WHEN (cases.shared) IS TRUE THEN $1 ELSE NULL END, CASE WHEN (cases.owner_id = $2) IS TRUE THEN $3 ELSE NULL END) FROM cases WHERE ((cases.shared) IS TRUE) OR ((cases.owner_id = $4) IS TRUE)"
+        "SELECT CASE WHEN (cases.tenant_id = $1) AND (TRUE) THEN GREATEST(CASE WHEN (cases.shared) IS TRUE THEN $2 ELSE NULL END, CASE WHEN (cases.owner_id = $3) IS TRUE THEN $4 ELSE NULL END) ELSE NULL END FROM cases WHERE (cases.tenant_id = $5) AND (((cases.shared) IS TRUE) OR ((cases.owner_id = $6) IS TRUE))"
     );
     Ok(())
 }
@@ -360,6 +389,40 @@ fn database_url_driver_inference_matches_enabled_sqlx_features() -> Result<(), T
     Ok(())
 }
 
+#[test]
+fn tenant_column_rejects_empty_and_sql_expression_input() {
+    assert!(matches!(
+        TenantColumn::new("", "tenant_id"),
+        Err(TenantColumnError::InvalidLength {
+            part: TenantIdentifierPart::Table,
+            ..
+        })
+    ));
+    for malicious in [
+        "TRUE",
+        "tenant_id = 1",
+        "tenant_id--",
+        "tenant_id/*comment*/",
+        "'tenant_id'",
+        "cases.tenant_id",
+    ] {
+        assert!(matches!(
+            TenantColumn::new("cases", malicious),
+            Err(TenantColumnError::InvalidCharacters {
+                part: TenantIdentifierPart::Column,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        TenantColumn::new("cases; DROP TABLE cases", "tenant_id"),
+        Err(TenantColumnError::InvalidCharacters {
+            part: TenantIdentifierPart::Table,
+            ..
+        })
+    ));
+}
+
 #[cfg(feature = "sqlite")]
 #[test]
 fn database_url_validation_rejects_backend_mismatch() -> Result<(), TestError> {
@@ -383,15 +446,19 @@ fn database_url_validation_rejects_backend_mismatch() -> Result<(), TestError> {
 #[test]
 fn sqlite_fragments_use_question_mark_placeholders() -> Result<(), TestError> {
     let residual = shared_or_owner_residual();
-    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(
+        Predicates,
+        TenantColumn::new("cases", "tenant_id")?,
+    )
+    .lower(&residual, &cx()?)?;
 
     assert_eq!(
         lowered.filter.to_sql(),
-        "((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE)"
+        "(cases.tenant_id = ?) AND (((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE))"
     );
     assert_eq!(
         lowered.grade.to_sql(),
-        "CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE max(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END"
+        "CASE WHEN (cases.tenant_id = ?) AND (TRUE) THEN CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE max(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END ELSE NULL END"
     );
     Ok(())
 }
@@ -400,15 +467,19 @@ fn sqlite_fragments_use_question_mark_placeholders() -> Result<(), TestError> {
 #[test]
 fn mysql_fragments_use_question_mark_placeholders() -> Result<(), TestError> {
     let residual = shared_or_owner_residual();
-    let lowered = SqlxLowerer::<MySqlBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = SqlxLowerer::<MySqlBackend, _, _>::new(
+        Predicates,
+        TenantColumn::new("cases", "tenant_id")?,
+    )
+    .lower(&residual, &cx()?)?;
 
     assert_eq!(
         lowered.filter.to_sql(),
-        "((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE)"
+        "(cases.tenant_id = ?) AND (((cases.shared) IS TRUE) OR ((cases.owner_id = ?) IS TRUE))"
     );
     assert_eq!(
         lowered.grade.to_sql(),
-        "CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE GREATEST(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END"
+        "CASE WHEN (cases.tenant_id = ?) AND (TRUE) THEN CASE WHEN (CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END WHEN (CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) IS NULL THEN CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END ELSE GREATEST(CASE WHEN (cases.shared) IS TRUE THEN ? ELSE NULL END, CASE WHEN (cases.owner_id = ?) IS TRUE THEN ? ELSE NULL END) END ELSE NULL END"
     );
     Ok(())
 }
@@ -426,7 +497,11 @@ async fn sqlite_lowered_query_matches_in_memory_evaluation() -> Result<(), TestE
     insert_sqlite_cases(&pool).await?;
 
     let residual = shared_or_owner_residual();
-    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(Predicates).lower(&residual, &cx()?)?;
+    let lowered = SqlxLowerer::<SqliteBackend, _, _>::new(
+        Predicates,
+        TenantColumn::new("cases", "tenant_id")?,
+    )
+    .lower(&residual, &cx()?)?;
     let mut query = QueryBuilder::<Sqlite>::new("SELECT cases.id, ");
     lowered.grade.push_to(&mut query);
     query.push(" AS grade FROM cases WHERE ");
@@ -466,26 +541,33 @@ fn negated_fact_predicate_treats_sql_null_as_absent() -> Result<(), TestError> {
         reason: None,
     };
 
-    let lowered = PgLowerer::new(Predicates).lower_filter(&residual, &cx()?)?;
+    let lowered = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?)
+        .lower_filter(&residual, &cx()?)?;
 
     assert_eq!(
         lowered.to_postgres_sql(),
-        "NOT ((cases.nullable_flag) IS TRUE)"
+        "(cases.tenant_id = $1) AND (NOT ((cases.nullable_flag) IS TRUE))"
     );
     Ok(())
 }
 
 #[test]
 fn empty_residual_combinators_lower_as_deny() -> Result<(), TestError> {
-    let adapter = PgLowerer::new(Predicates);
+    let adapter = PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?);
 
     for residual in [
         gatekeep::ResidualPolicy::<Tier>::All(Vec::new()),
         gatekeep::ResidualPolicy::<Tier>::Any(Vec::new()),
     ] {
         let lowered = adapter.lower(&residual, &cx()?)?;
-        assert_eq!(lowered.filter.to_postgres_sql(), "FALSE");
-        assert_eq!(lowered.grade.to_postgres_sql(), "NULL");
+        assert_eq!(
+            lowered.filter.to_postgres_sql(),
+            "(cases.tenant_id = $1) AND (FALSE)"
+        );
+        assert_eq!(
+            lowered.grade.to_postgres_sql(),
+            "CASE WHEN (cases.tenant_id = $1) AND (TRUE) THEN NULL ELSE NULL END"
+        );
     }
 
     Ok(())
@@ -519,6 +601,7 @@ async fn reset_sqlite_database(pool: &sqlx::SqlitePool) -> Result<(), TestError>
         r"
         create table cases (
             id integer primary key,
+            tenant_id text not null,
             shared boolean not null,
             owner_id text
         )
@@ -539,11 +622,12 @@ async fn insert_sqlite_cases(pool: &sqlx::SqlitePool) -> Result<(), TestError> {
     ] {
         sqlx::query(
             r"
-            insert into cases (id, shared, owner_id)
-            values (?, ?, ?)
+            insert into cases (id, tenant_id, shared, owner_id)
+            values (?, ?, ?, ?)
             ",
         )
         .bind(id)
+        .bind("tenant-1")
         .bind(shared)
         .bind(owner_id)
         .execute(pool)
@@ -589,7 +673,13 @@ enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
+    Context(#[from] gatekeep::ContextError),
+    #[error(transparent)]
+    Binding(#[from] gatekeep::TenantBindingError),
+    #[error(transparent)]
     Lower(#[from] gatekeep::LowerError),
+    #[error(transparent)]
+    TenantColumn(#[from] gatekeep_sqlx::TenantColumnError),
     #[error(transparent)]
     Driver(#[from] gatekeep_sqlx::SqlxDriverError),
     #[error(transparent)]

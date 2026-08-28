@@ -3,7 +3,10 @@
 use std::{convert::Infallible, env};
 
 use async_trait::async_trait;
-use gatekeep::{Context, FactId, FactResolver, KnownFacts, PartialFacts, ResolveError};
+use gatekeep::{
+    BindingProvenance, Clock, Context, FactId, FactResolution, FactResolutionMetadata,
+    FactResolver, KnownFacts, PartialFacts, ResolveError,
+};
 use gatekeep_axum::Gatekeeper;
 use gatekeep_sqlx::PgDovecoteAudit;
 use sqlx::PgPool;
@@ -25,7 +28,7 @@ async fn build_gatekeeper(
 ) -> Result<DurableGatekeeper, Box<dyn std::error::Error + Send + Sync>> {
     let audit = PgDovecoteAudit::new(pool, "https://auth.example.test/gatekeep")?;
     audit.check_schema().await?;
-    Ok(Gatekeeper::new(ApplicationFactResolver).with_audit_sink(audit))
+    Ok(Gatekeeper::new(ApplicationFactResolver, audit))
 }
 
 /// Application-owned fact lookup used by this setup example.
@@ -40,15 +43,22 @@ impl FactResolver for ApplicationFactResolver {
         &self,
         _required: &[FactId],
         _cx: &Context,
-    ) -> Result<KnownFacts, ResolveError<Self::Error>> {
-        Ok(KnownFacts::new())
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
+        let metadata = BindingProvenance::new("example.application-facts")
+            .ok()
+            .map(|source| FactResolutionMetadata::new(source, None, None));
+        FactResolution::new(KnownFacts::new(), metadata, clock.now_utc())
+            .map_err(ResolveError::Resolution)
     }
 
     async fn resolve_for_query(
         &self,
         _required: &[FactId],
         _cx: &Context,
-    ) -> Result<PartialFacts, ResolveError<Self::Error>> {
-        Ok(PartialFacts::new())
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
+        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
+            .map_err(ResolveError::Resolution)
     }
 }

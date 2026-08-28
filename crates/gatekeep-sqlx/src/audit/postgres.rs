@@ -88,8 +88,12 @@ impl PgDovecoteAudit {
         transaction: &mut Transaction<'_, Postgres>,
         entry: &AuditEntry,
     ) -> Result<EnqueueOutcome, PgDovecoteAuditError> {
-        let event = event_from_entry(&self.config, entry)?;
-        Ok(self.dovecote.enqueue(transaction, event).await?)
+        let (tenant, event) = event_from_entry(&self.config, entry)?;
+        Ok(self
+            .dovecote
+            .for_tenant(tenant)
+            .enqueue(transaction, event)
+            .await?)
     }
 }
 

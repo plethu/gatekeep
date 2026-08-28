@@ -24,6 +24,12 @@ When a change touches SQLx, migrations, or database queries, also run:
 mise run test-db
 ```
 
+Dependency changes must also pass the RustSec-backed cargo-deny checks:
+
+```sh
+just supply-chain
+```
+
 The structural Rust checks are documented in
 [`tools/ast-grep/README.md`](tools/ast-grep/README.md). Run them on their own
 with `mise run lint-structure`.

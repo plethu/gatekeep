@@ -7,6 +7,9 @@ use time::{OffsetDateTime, UtcOffset};
 /// Result type used by gatekeep constructors and validators.
 pub type GatekeepResult<T> = Result<T, GatekeepError>;
 
+/// Maximum UTF-8 byte length shared with Dovecote tenant routing values.
+pub const MAX_TENANT_ID_BYTES: usize = 255;
+
 /// Validation errors returned by typed gatekeep records.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum GatekeepError {
@@ -42,6 +45,26 @@ pub enum GatekeepError {
         /// Static validation reason.
         reason: &'static str,
     },
+    /// A tenant identifier exceeds the shared UTF-8 byte bound.
+    #[error("tenant_id exceeds {max_bytes} UTF-8 bytes (was {actual_bytes})")]
+    TenantIdTooLong {
+        /// Maximum accepted UTF-8 byte length.
+        max_bytes: usize,
+        /// Rejected UTF-8 byte length.
+        actual_bytes: usize,
+    },
+    /// A tenant identifier contains a forbidden Unicode control character.
+    #[error("tenant_id contains forbidden control character U+{code_point:04X}")]
+    TenantIdControlCharacter {
+        /// Rejected Unicode scalar value.
+        code_point: u32,
+    },
+    /// A tenant identifier contains a Unicode noncharacter.
+    #[error("tenant_id contains forbidden Unicode noncharacter U+{code_point:04X}")]
+    TenantIdNoncharacter {
+        /// Rejected Unicode scalar value.
+        code_point: u32,
+    },
 }
 
 fn validate_identifier(field: &'static str, value: impl Into<String>) -> GatekeepResult<String> {
@@ -56,6 +79,32 @@ fn validate_identifier(field: &'static str, value: impl Into<String>) -> Gatekee
     } else {
         Ok(value)
     }
+}
+
+fn validate_tenant_id(value: impl Into<String>) -> GatekeepResult<String> {
+    let value = value.into();
+    if value.is_empty() {
+        return Err(GatekeepError::EmptyIdentifier { field: "tenant_id" });
+    }
+    if value.len() > MAX_TENANT_ID_BYTES {
+        return Err(GatekeepError::TenantIdTooLong {
+            max_bytes: MAX_TENANT_ID_BYTES,
+            actual_bytes: value.len(),
+        });
+    }
+    for character in value.chars() {
+        let code_point = character as u32;
+        if character.is_control() {
+            return Err(GatekeepError::TenantIdControlCharacter { code_point });
+        }
+        if (0xFDD0..=0xFDEF).contains(&code_point)
+            || code_point & 0xFFFF == 0xFFFF
+            || code_point & 0xFFFF == 0xFFFE
+        {
+            return Err(GatekeepError::TenantIdNoncharacter { code_point });
+        }
+    }
+    Ok(value)
 }
 
 fn validate_locale(value: impl Into<String>) -> GatekeepResult<String> {
@@ -128,7 +177,7 @@ macro_rules! owned_id {
 }
 
 macro_rules! static_id {
-    ($name:ident, $owned:ident) => {
+    ($name:ident, $owned:ident, $validator:path) => {
         /// Static gatekeep identifier.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(&'static str);
@@ -137,7 +186,7 @@ macro_rules! static_id {
             /// Creates a compile-time validated static identifier.
             #[must_use]
             pub const fn new(value: &'static str) -> Self {
-                assert_valid_static_id(value);
+                $validator(value);
                 Self(value)
             }
 
@@ -158,6 +207,9 @@ macro_rules! static_id {
             }
         }
     };
+    ($name:ident, $owned:ident) => {
+        static_id!($name, $owned, assert_valid_static_id);
+    };
 }
 
 const fn assert_valid_static_id(value: &str) {
@@ -175,6 +227,47 @@ const fn assert_valid_static_id(value: &str) {
     assert!(has_non_whitespace, "static identity must not be whitespace");
 }
 
+const fn assert_valid_static_tenant_id(value: &str) {
+    assert_valid_static_id(value);
+    assert!(
+        value.len() <= MAX_TENANT_ID_BYTES,
+        "static tenant identity exceeds 255 UTF-8 bytes"
+    );
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let first = bytes[index];
+        let (code_point, width) = if first < 0x80 {
+            (first as u32, 1)
+        } else if first < 0xE0 {
+            let code_point = ((first & 0x1F) as u32) << 6 | (bytes[index + 1] & 0x3F) as u32;
+            (code_point, 2)
+        } else if first < 0xF0 {
+            let code_point = ((first & 0x0F) as u32) << 12
+                | ((bytes[index + 1] & 0x3F) as u32) << 6
+                | (bytes[index + 2] & 0x3F) as u32;
+            (code_point, 3)
+        } else {
+            let code_point = ((first & 0x07) as u32) << 18
+                | ((bytes[index + 1] & 0x3F) as u32) << 12
+                | ((bytes[index + 2] & 0x3F) as u32) << 6
+                | (bytes[index + 3] & 0x3F) as u32;
+            (code_point, 4)
+        };
+        assert!(
+            !(code_point <= 0x1F || code_point == 0x7F),
+            "static tenant identity contains a control character"
+        );
+        assert!(
+            !((code_point >= 0xFDD0 && code_point <= 0xFDEF)
+                || code_point & 0xFFFF == 0xFFFF
+                || code_point & 0xFFFF == 0xFFFE),
+            "static tenant identity contains a Unicode noncharacter"
+        );
+        index += width;
+    }
+}
+
 owned_id!(FactId, "fact_id");
 owned_id!(ClauseLabel, "clause_label");
 owned_id!(ObligationId, "obligation_id");
@@ -185,7 +278,57 @@ owned_id!(ReasonCode, "reason_code");
 owned_id!(RequestId, "request_id");
 owned_id!(DecisionAuditId, "decision_audit_id");
 owned_id!(SubjectSlot, "subject_slot");
-owned_id!(TenantId, "tenant_id");
+/// Tenant routing identity shared with Dovecote's 255-byte `CloudEvents` value.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TenantId(String);
+
+impl TenantId {
+    /// Creates a tenant identifier with Dovecote-compatible validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`GatekeepError`] for an empty, overlong, or forbidden
+    /// tenant value.
+    pub fn new(value: impl Into<String>) -> GatekeepResult<Self> {
+        validate_tenant_id(value).map(Self)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_trusted(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the tenant identifier as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TenantId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Serialize for TenantId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TenantId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
 
 impl DecisionAuditId {
     /// Generates a new sortable identifier for one decision occurrence.
@@ -297,7 +440,7 @@ static_id!(StaticParamKey, ParamKey);
 static_id!(StaticReasonCode, ReasonCode);
 static_id!(StaticRequestId, RequestId);
 static_id!(StaticSubjectSlot, SubjectSlot);
-static_id!(StaticTenantId, TenantId);
+static_id!(StaticTenantId, TenantId, assert_valid_static_tenant_id);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// Language or locale tag used by human-facing reason text.

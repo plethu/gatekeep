@@ -5,6 +5,8 @@ use keepsake::{CommandContext, RelationId, RevokeBySubject, SubjectRef};
 /// Resolved keepsake target for a gatekeep fact binding.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeepsakeRelationTarget {
+    /// Tenant containing the subject and relation.
+    pub tenant_id: keepsake::TenantId,
     /// Gatekeep fact that maps to this keepsake relation target.
     pub fact: FactId,
     /// Keepsake subject used for relation lookups and lifecycle writes.
@@ -19,6 +21,12 @@ impl KeepsakeRelationTarget {
     /// Builds a keepsake revoke-by-subject command for this target.
     #[must_use]
     pub fn revoke_by_subject(&self, at: DateTime<Utc>, context: CommandContext) -> RevokeBySubject {
-        RevokeBySubject::new(self.subject.clone(), self.relation_id, at, context)
+        RevokeBySubject::new(
+            self.tenant_id.clone(),
+            self.subject.clone(),
+            self.relation_id,
+            at,
+            context,
+        )
     }
 }

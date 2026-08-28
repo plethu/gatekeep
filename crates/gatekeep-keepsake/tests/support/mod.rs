@@ -9,11 +9,12 @@ use std::collections::BTreeMap;
 
 use gatekeep::{
     Context, Fact, FactId, GatekeepError, Locale, StaticFactId, SubjectRef, SubjectSlot, TenantId,
+    TrustedServiceBinding,
 };
 use gatekeep_keepsake::KeepsakeResolver;
 use keepsake::{
     ActiveRelation, ActiveRelationSource, ExpiryPolicy, InMemoryActiveRelations, RelationId,
-    RelationKey, SubjectRef as KeepsakeSubjectRef, relation_spec,
+    RelationKey, SubjectRef as KeepsakeSubjectRef, TenantId as KeepsakeTenantId, relation_spec,
 };
 use thiserror::Error;
 
@@ -80,8 +81,13 @@ impl FakeSource {
         }
     }
 
-    pub fn with_active_for_paid_plan(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
+    pub fn with_active_for_paid_plan(
+        self,
+        tenant_id: KeepsakeTenantId,
+        subject: KeepsakeSubjectRef,
+    ) -> TestResult<Self> {
         self.inner.insert_active_for_spec::<PaidPlanRelation>(
+            tenant_id,
             0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
             subject,
             fixed_time()?,
@@ -89,9 +95,14 @@ impl FakeSource {
         Ok(self)
     }
 
-    pub fn with_active_for_resource_member(self, subject: KeepsakeSubjectRef) -> TestResult<Self> {
+    pub fn with_active_for_resource_member(
+        self,
+        tenant_id: KeepsakeTenantId,
+        subject: KeepsakeSubjectRef,
+    ) -> TestResult<Self> {
         self.inner
             .insert_active_for_spec::<ResourceMemberRelation>(
+                tenant_id,
                 0xbbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb,
                 subject,
                 fixed_time()?,
@@ -116,6 +127,7 @@ impl ActiveRelationSource for FakeSource {
 
     async fn active_relations_for_subject(
         &self,
+        tenant_id: &keepsake::TenantId,
         subject: &KeepsakeSubjectRef,
     ) -> Result<Vec<ActiveRelation>, Self::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
@@ -123,13 +135,14 @@ impl ActiveRelationSource for FakeSource {
             return Err(StoreError::Failed);
         }
         self.inner
-            .active_relations_for_subject(subject)
+            .active_relations_for_subject(tenant_id, subject)
             .await
             .map_err(|_| StoreError::Failed)
     }
 
     async fn active_relations_for_subject_by_ids(
         &self,
+        tenant_id: &keepsake::TenantId,
         subject: &KeepsakeSubjectRef,
         relation_ids: &[RelationId],
     ) -> Result<Vec<ActiveRelation>, Self::Error> {
@@ -142,13 +155,14 @@ impl ActiveRelationSource for FakeSource {
             .map_err(|_| StoreError::Poisoned)?
             .push(relation_ids.to_vec());
         self.inner
-            .active_relations_for_subject_by_ids(subject, relation_ids)
+            .active_relations_for_subject_by_ids(tenant_id, subject, relation_ids)
             .await
             .map_err(|_| StoreError::Failed)
     }
 
     async fn active_relations_for_subject_by_keys(
         &self,
+        tenant_id: &keepsake::TenantId,
         subject: &KeepsakeSubjectRef,
         keys: &[RelationKey],
     ) -> Result<Vec<ActiveRelation>, Self::Error> {
@@ -157,7 +171,7 @@ impl ActiveRelationSource for FakeSource {
             return Err(StoreError::Failed);
         }
         self.inner
-            .active_relations_for_subject_by_keys(subject, keys)
+            .active_relations_for_subject_by_keys(tenant_id, subject, keys)
             .await
             .map_err(|_| StoreError::Failed)
     }
@@ -172,44 +186,46 @@ pub fn resolver_for_tenant(
     principal: &SubjectRef,
 ) -> TestResult<KeepsakeResolver<FakeSource>> {
     let subject = tenant_subject(tenant, principal)?;
-    resolver_with_subject(subject)
+    resolver_with_subject(KeepsakeTenantId::new(tenant)?, subject)
 }
 
-pub fn principal_resolver_for(principal: &SubjectRef) -> TestResult<KeepsakeResolver<FakeSource>> {
+pub fn principal_resolver_for(
+    tenant: &str,
+    principal: &SubjectRef,
+) -> TestResult<KeepsakeResolver<FakeSource>> {
     let subject = KeepsakeSubjectRef::new(principal.kind(), principal.id())?;
-    resolver_with_subject(subject)
+    resolver_with_subject(KeepsakeTenantId::new(tenant)?, subject)
 }
 
-fn resolver_with_subject(subject: KeepsakeSubjectRef) -> TestResult<KeepsakeResolver<FakeSource>> {
+fn resolver_with_subject(
+    tenant_id: KeepsakeTenantId,
+    subject: KeepsakeSubjectRef,
+) -> TestResult<KeepsakeResolver<FakeSource>> {
     Ok(KeepsakeResolver::new(
-        FakeSource::default().with_active_for_paid_plan(subject)?,
+        FakeSource::default().with_active_for_paid_plan(tenant_id, subject)?,
     ))
 }
 
-pub fn context(tenant: &str, principal: SubjectRef) -> Result<Context, GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new(tenant)?,
+pub fn context(tenant: &str, principal: SubjectRef) -> TestResult<Context> {
+    let tenant = TenantId::new(tenant)?;
+    let binding = TrustedServiceBinding::new(tenant, "gatekeep-keepsake.tests")?;
+    Ok(Context::from_trusted_service(
+        binding,
         principal,
-        subjects: BTreeMap::new(),
-        locale: Locale::new("en-US")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+        Locale::new("en-US")?,
+    )?)
 }
 
 pub fn context_with_subjects(
     tenant: &str,
     principal: SubjectRef,
     subjects: BTreeMap<SubjectSlot, SubjectRef>,
-) -> Result<Context, GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new(tenant)?,
-        principal,
-        subjects,
-        locale: Locale::new("en-US")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+) -> TestResult<Context> {
+    let mut context = context(tenant, principal)?;
+    for (slot, subject) in subjects {
+        context = context.with_subject(slot, subject);
+    }
+    Ok(context)
 }
 
 pub fn subject(kind: &str, id: &str) -> Result<SubjectRef, GatekeepError> {

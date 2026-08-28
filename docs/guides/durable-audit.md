@@ -10,13 +10,13 @@ Enable the SQLx backend feature and run the matching migration:
 
 ```toml
 [dependencies]
-gatekeep-sqlx = { version = "2.0", features = ["postgres"] }
+gatekeep-sqlx = { version = "3.0", features = ["postgres"] }
 ```
 
 The compile-checked [`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs)
 example is the canonical setup: it imports `gatekeep_axum::Gatekeeper`, uses an
 application-owned `FactResolver`, checks the Dovecote schema, and attaches
-`PgDovecoteAudit` with `Gatekeeper::new(resolver).with_audit_sink(audit)`. The
+`PgDovecoteAudit` with `Gatekeeper::new(resolver, audit)`. The
 workspace builds this example as part of its checks.
 
 The sink implements `gatekeep::AuditSink`. For an existing application
@@ -36,8 +36,12 @@ The Dovecote schema stores:
 - configured absolute source, `gatekeep-audit` stream, and
   `gatekeep.decision_audit_recorded` type
 
-Use Dovecote live or snapshot paging for history and decode its JSON payload
-into `AuditEntry`. Do not add Gatekeep-owned child tables or a second outbox.
+Use Dovecote live or snapshot paging for history and decode each complete
+`PagedEvent` with `gatekeep_sqlx::decode_decision_audit`; the decoder checks the
+storage-row tenant against the payload tenant and validates current binding and
+fact evidence before returning `AuditEntry`. It does not silently import
+legacy-shaped payloads; use an explicit versioned migration importer for those.
+Do not add Gatekeep-owned child tables or a second outbox.
 
 ## Failure Handling
 
@@ -45,12 +49,12 @@ The Axum adapter awaits audit persistence before returning permit or deny. That
 gives the application a clear choice: return a successful authorization result
 only when the audit sink accepted the record, or surface the adapter error.
 
-Use `NoopAuditSink` only for applications where durable authorization audit is
-out of scope.
+Use `Gatekeeper::unaudited(resolver)` only when durable authorization audit is
+explicitly out of scope. The production constructor requires an audit sink.
 
 ## Installation and migration
 
-For a new 2.0 installation, install the application's domain schema and the
+For a new 3.0 installation, install the application's domain schema and the
 selected Dovecote schema, call `check_schema`, configure the source, and use
 the ordinary sink. No Gatekeep audit migration is required.
 

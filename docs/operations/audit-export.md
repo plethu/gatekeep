@@ -20,8 +20,12 @@ match the service.
 ## Payload Use
 
 Decode the complete Dovecote event payload into `AuditEntry` for reporting.
+When paging, use `gatekeep_sqlx::decode_decision_audit` with the complete
+`PagedEvent`; it rejects a payload whose tenant differs from the storage row.
 Gatekeep does not maintain structured child tables or bespoke delivery state.
 
 For high-volume exports, keep worker queries bounded and checkpoint by the last
-accepted Dovecote row id. Delivery is at least once: consumers deduplicate by
-CloudEvents `(source, id)`.
+accepted Dovecote row id. Delivery is at least once: consumers preserve tenant
+routing and deduplicate by the Dovecote identity `(tenant_id, source,
+event_id)`. A transport projection carries tenant routing separately from the
+CloudEvents `(source, id)` pair.

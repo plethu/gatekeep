@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use gatekeep::{
-    Context, FactId, FactResolver, GatekeepError, KnownFacts, PartialFacts, ResolveError,
+    BindingProvenance, Clock, Context, FactId, FactResolution, FactResolutionMetadata,
+    FactResolver, GatekeepError, KnownFacts, PartialFacts, ResolveError,
 };
 use gatekeep_example_authorized_list_support::{CaseOwner, SharedCase, Staff, router};
 
@@ -61,23 +62,36 @@ impl FactResolver for StaticResolver {
         &self,
         required: &[FactId],
         _cx: &Context,
-    ) -> Result<KnownFacts, ResolveError<Self::Error>> {
-        KnownFacts::from_entries(
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
+        let facts = KnownFacts::from_entries(
             required
                 .iter()
                 .map(|fact| (fact.clone(), self.decision_facts.presence(fact))),
         )
-        .map_err(ResolveError::Backend)
+        .map_err(ResolveError::Backend)?;
+        let metadata = BindingProvenance::new("example.static-facts")
+            .ok()
+            .map(|source| FactResolutionMetadata::new(source, None, None));
+        FactResolution::new(facts, metadata, clock.now_utc()).map_err(ResolveError::Resolution)
     }
 
     async fn resolve_for_query(
         &self,
         required: &[FactId],
         _cx: &Context,
-    ) -> Result<PartialFacts, ResolveError<Self::Error>> {
-        Ok(PartialFacts::from_entries(required.iter().map(|fact| {
-            (fact.clone(), self.query_facts.presence(fact))
-        })))
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
+        FactResolution::new(
+            PartialFacts::from_entries(
+                required
+                    .iter()
+                    .map(|fact| (fact.clone(), self.query_facts.presence(fact))),
+            ),
+            None,
+            clock.now_utc(),
+        )
+        .map_err(ResolveError::Resolution)
     }
 }
 

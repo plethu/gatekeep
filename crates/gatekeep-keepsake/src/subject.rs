@@ -23,8 +23,8 @@ pub struct TenantScopedSubjectMapper;
 impl SubjectMapper for TenantScopedSubjectMapper {
     fn subject(&self, cx: &Context) -> Result<SubjectRef, KeepsakeError> {
         SubjectRef::new(
-            tenant_principal_kind(cx.tenant.as_str(), cx.principal.kind()),
-            cx.principal.id(),
+            tenant_principal_kind(cx.tenant().as_str(), cx.principal().kind()),
+            cx.principal().id(),
         )
     }
 }
@@ -36,7 +36,7 @@ pub struct PrincipalSubjectMapper;
 
 impl SubjectMapper for PrincipalSubjectMapper {
     fn subject(&self, cx: &Context) -> Result<SubjectRef, KeepsakeError> {
-        SubjectRef::new(cx.principal.kind(), cx.principal.id())
+        SubjectRef::new(cx.principal().kind(), cx.principal().id())
     }
 }
 

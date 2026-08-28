@@ -449,11 +449,10 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dovecote"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64",
  "mime",
- "serde",
  "serde_json",
  "thiserror",
  "time",
@@ -462,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-mysql"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -473,7 +472,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-postgres"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -484,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-sqlite"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -705,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -721,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-axum"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -748,6 +747,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror",
+ "time",
 ]
 
 [[package]]
@@ -761,6 +761,7 @@ dependencies = [
  "gatekeep-example-authorized-list-support",
  "serde_json",
  "thiserror",
+ "time",
  "tokio",
  "tower",
 ]
@@ -774,6 +775,7 @@ dependencies = [
  "gatekeep-axum",
  "gatekeep-sqlx",
  "sqlx",
+ "time",
  "tokio",
 ]
 
@@ -796,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-fluent"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "fluent-bundle",
  "gatekeep",
@@ -807,19 +809,21 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-keepsake"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "chrono",
  "gatekeep",
+ "gatekeep-axum",
  "keepsake",
  "thiserror",
+ "time",
  "tokio",
 ]
 
 [[package]]
 name = "gatekeep-sqlx"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "dovecote",
@@ -1190,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "chrono",
  "serde",

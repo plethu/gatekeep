@@ -45,3 +45,4 @@ access such as redacted/full records or scope unions.
 - [Audit export](operations/audit-export.md)
 - [Migrations](operations/migrations.md)
 - [Versioning](operations/versioning.md)
+- [Threat model](threat-model.md)

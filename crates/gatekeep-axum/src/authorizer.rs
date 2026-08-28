@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use gatekeep::{
     AuditEntry, AuditSink, Context, Decision, DecisionAuditId, DecisionAuditOccurrence,
-    DecisionSummary, DecisiveClause, DenyShape, Effect, EffectKind, FactResolver,
-    IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver, Policy, PolicyAnchor,
-    PolicyId, PolicyObserver, ReasonCatalog, evaluate, required_facts,
+    DecisionSummary, DecisiveClause, DenyShape, Effect, EffectKind, FactResolutionEvidence,
+    FactResolver, IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver, Policy,
+    PolicyAnchor, PolicyId, PolicyObserver, ReasonCatalog, ResolveError, SystemClock, evaluate,
+    required_facts,
 };
 use serde::Serialize;
-use time::OffsetDateTime;
 
 use crate::{DenialResponseConfig, GatekeepAxumError, GatekeepRejection};
 
@@ -30,7 +30,7 @@ pub struct Gatekeeper<R, A = NoopAuditSink, C = IdentityReasonCatalog, W = NoopP
     reason_catalog: Arc<C>,
     observer: Arc<W>,
     denial_response: DenialResponseConfig,
-    clock: Arc<dyn Fn() -> OffsetDateTime + Send + Sync>,
+    clock: Arc<dyn gatekeep::Clock>,
 }
 
 impl<R, A, C, W> Clone for Gatekeeper<R, A, C, W> {
@@ -47,16 +47,35 @@ impl<R, A, C, W> Clone for Gatekeeper<R, A, C, W> {
 }
 
 impl<R> Gatekeeper<R> {
-    /// Creates a gatekeeper with no-op audit and identity reason rendering.
+    /// Creates an explicitly unaudited gatekeeper with identity reason
+    /// rendering.
+    ///
+    /// The name is intentionally explicit: use [`Self::new`] for production
+    /// authorization where every decision must reach a durable audit sink.
     #[must_use]
-    pub fn new(resolver: R) -> Self {
+    pub fn unaudited(resolver: R) -> Self {
         Self {
             resolver: Arc::new(resolver),
             audit_sink: Arc::new(NoopAuditSink),
             reason_catalog: Arc::new(IdentityReasonCatalog),
             observer: Arc::new(NoopPolicyObserver),
             denial_response: DenialResponseConfig::default(),
-            clock: Arc::new(OffsetDateTime::now_utc),
+            clock: Arc::new(SystemClock),
+        }
+    }
+}
+
+impl<R, A> Gatekeeper<R, A> {
+    /// Creates a gatekeeper with an explicit audit sink.
+    #[must_use]
+    pub fn new(resolver: R, audit_sink: A) -> Self {
+        Self {
+            resolver: Arc::new(resolver),
+            audit_sink: Arc::new(audit_sink),
+            reason_catalog: Arc::new(IdentityReasonCatalog),
+            observer: Arc::new(NoopPolicyObserver),
+            denial_response: DenialResponseConfig::default(),
+            clock: Arc::new(SystemClock),
         }
     }
 }
@@ -116,6 +135,17 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
         self.denial_response = denial_response;
         self
     }
+
+    /// Replaces the clock used by tenant validation, fact resolution, and
+    /// audit occurrence capture.
+    #[must_use]
+    pub fn with_clock<F>(mut self, clock: F) -> Self
+    where
+        F: gatekeep::Clock + 'static,
+    {
+        self.clock = Arc::new(clock);
+        self
+    }
 }
 
 impl<R, A, C, W> Gatekeeper<R, A, C, W>
@@ -142,6 +172,11 @@ where
     where
         O: Lattice + Serialize + Send + Sync,
     {
+        context
+            .validate_at(self.clock.now_utc())
+            .map_err(GatekeepAxumError::Context)
+            .map_err(GatekeepRejection::from_error)?;
+
         let anchor = PolicyAnchor {
             policy_id,
             policy_hash: policy
@@ -151,16 +186,34 @@ where
         };
 
         let required = required_facts(policy).into_iter().collect::<Vec<_>>();
-        let facts = self
+        let resolution = self
             .resolver
-            .resolve_for_decision(&required, &context)
+            .resolve_for_decision(&required, &context, self.clock.as_ref())
             .await
             .map_err(GatekeepAxumError::Resolve)
             .map_err(GatekeepRejection::from_error)?;
-        let decision = evaluate(policy, &facts);
+        // Capture receipt/decision time separately from the resolver's source
+        // observation time. The binding and freshness checks use this local
+        // decision boundary, while audit evidence retains the envelope's
+        // atomic `observed_at`.
+        let received_at = self.clock.now_utc();
+        context
+            .validate_at(received_at)
+            .map_err(GatekeepAxumError::Context)
+            .map_err(GatekeepRejection::from_error)?;
+        resolution
+            .validate_at(received_at)
+            .map_err(ResolveError::Resolution)
+            .map_err(GatekeepAxumError::Resolve)
+            .map_err(GatekeepRejection::from_error)?;
+        let fact_resolution = FactResolutionEvidence::from_resolution(&resolution)
+            .map_err(GatekeepAxumError::FactResolutionEvidence)
+            .map_err(GatekeepRejection::from_error)?;
+        let facts = resolution.facts();
+        let decision = evaluate(policy, facts);
 
         let audit_occurrence = self
-            .observe_and_audit(&anchor, &decision, &context)
+            .observe_and_audit(&anchor, &decision, &context, fact_resolution)
             .await
             .map_err(GatekeepRejection::from_error)?;
 
@@ -178,7 +231,7 @@ where
                 let response = self.denial_response.denied(
                     denial_shape(&decision),
                     reason.as_ref(),
-                    &context.locale,
+                    context.locale(),
                     self.reason_catalog.as_ref(),
                 );
                 Err(response.into())
@@ -191,34 +244,38 @@ where
         anchor: &PolicyAnchor,
         decision: &Decision<O>,
         context: &Context,
+        fact_resolution: gatekeep::FactResolutionEvidence,
     ) -> Result<DecisionAuditOccurrence, GatekeepAxumError<R::Error, A::Error>>
     where
         O: Serialize + Clone + Sync,
     {
-        let supplied_occurrence = context.decision_audit_occurrence.clone();
+        let supplied_occurrence = context.decision_audit_occurrence().cloned();
         let occurrence = supplied_occurrence
             .map_or_else(
-                || DecisionAuditOccurrence::new(DecisionAuditId::generate(), (self.clock)()),
+                || DecisionAuditOccurrence::new(DecisionAuditId::generate(), self.clock.now_utc()),
                 |value| DecisionAuditOccurrence::new(value.decision_audit_id, value.occurred_at),
             )
             .map_err(GatekeepAxumError::Occurrence)?;
         let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
-        let entry = AuditEntry {
-            decision_audit_id: occurrence.decision_audit_id.clone(),
-            occurred_at: occurrence.occurred_at,
-            request_id: context.request_id.clone(),
-            anchor: anchor.clone(),
-            effect: EffectKind::from(decision),
-            obligations: decision.obligations.clone(),
-            consulted: trace.consulted.clone(),
-            decisive: trace.decisive.clone(),
-            denial_reason: decision.denial_reason().map_err(GatekeepAxumError::Trace)?,
+        let entry = AuditEntry::new(
+            occurrence.decision_audit_id.clone(),
+            occurrence.occurred_at,
+            context.request_id().cloned(),
+            anchor.clone(),
+            EffectKind::from(decision),
+            decision.obligations.clone(),
+            trace.consulted.clone(),
+            trace.decisive.clone(),
+            decision.denial_reason().map_err(GatekeepAxumError::Trace)?,
             trace,
-            tenant: context.tenant.clone(),
-            principal: context.principal.clone(),
-            subjects: context.subjects.clone(),
-            locale: context.locale.clone(),
-        };
+            context.binding().clone(),
+            fact_resolution,
+            context.tenant().clone(),
+            context.principal().clone(),
+            context.subjects().clone(),
+            context.locale().clone(),
+        )
+        .map_err(GatekeepAxumError::AuditEntry)?;
 
         let summary = DecisionSummary {
             anchor: anchor.clone(),

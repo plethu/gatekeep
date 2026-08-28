@@ -1,9 +1,10 @@
 use gatekeep::{
-    Condition, Context, Effect, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, Presence,
-    QueryLowering, StaticFactId, SubjectRef, TenantId, evaluate_residual,
+    BindingAuthority, BindingProvenance, Condition, Context, Effect, EvidenceDigest, Fact, FactId,
+    GatekeepError, KnownFacts, Lattice, Locale, Presence, QueryLowering, StaticFactId, SubjectRef,
+    TenantBindingEvidence, TenantId, evaluate_residual,
 };
 use gatekeep_sqlx::{
-    PgFactPredicates, PgFragment, PgLowerer, PgValue, PostgresBackend, SqlOutcome,
+    PgFactPredicates, PgFragment, PgLowerer, PgValue, PostgresBackend, SqlOutcome, TenantColumn,
     validate_database_url_for_backend,
 };
 use sqlx::{PgPool, Postgres, QueryBuilder, postgres::PgPoolOptions};
@@ -68,7 +69,7 @@ impl PgFactPredicates for Predicates {
             "nullable_flag" => Some(PgFragment::trusted("cases.nullable_flag")),
             "owner" => {
                 let mut fragment = PgFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(PgFragment::bind(cx.principal.id()));
+                fragment.push_fragment(PgFragment::bind(cx.principal().id()));
                 Some(fragment)
             }
             _ => None,
@@ -116,7 +117,8 @@ pub async fn selected_rows(
     cx: &Context,
     residual: &gatekeep::ResidualPolicy<Tier>,
 ) -> TestResult<Vec<(i32, i64)>> {
-    let lowered = PgLowerer::new(Predicates).lower(residual, cx)?;
+    let lowered =
+        PgLowerer::new(Predicates, TenantColumn::new("cases", "tenant_id")?).lower(residual, cx)?;
     let mut query = QueryBuilder::<Postgres>::new("SELECT cases.id, ");
     lowered.grade.push_to(&mut query);
     query.push(" AS grade FROM cases WHERE ");
@@ -195,6 +197,7 @@ pub async fn reset_database(pool: &PgPool) -> TestResult<()> {
         r"
         create table cases (
             id integer primary key,
+            tenant_id text not null,
             shared boolean not null,
             owner_id text,
             nullable_flag boolean
@@ -210,11 +213,12 @@ pub async fn insert_cases(pool: &PgPool, cases: &[Case]) -> TestResult<()> {
     for case in cases {
         sqlx::query(
             r"
-            insert into cases (id, shared, owner_id, nullable_flag)
-            values ($1, $2, $3, $4)
+            insert into cases (id, tenant_id, shared, owner_id, nullable_flag)
+            values ($1, $2, $3, $4, $5)
             ",
         )
         .bind(case.id)
+        .bind("tenant-1")
         .bind(case.shared)
         .bind(case.owner_id)
         .bind(case.nullable_flag)
@@ -224,15 +228,29 @@ pub async fn insert_cases(pool: &PgPool, cases: &[Case]) -> TestResult<()> {
     Ok(())
 }
 
-pub fn cx() -> Result<Context, GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef::new("user", "subject-1")?,
-        subjects: std::collections::BTreeMap::new(),
-        locale: Locale::new("en-GB")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+pub fn cx() -> TestResult<Context> {
+    let now = time::OffsetDateTime::UNIX_EPOCH;
+    let tenant = TenantId::new("tenant-1")?;
+    let binding = gatekeep::ApplicationVerifiedTenantBinding::new(
+        tenant.clone(),
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now,
+        now + time::Duration::hours(1),
+    )?;
+    Ok(Context::new_at(
+        tenant,
+        gatekeep::TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "subject-1")?,
+        Locale::new("en-GB")?,
+        now,
+    )?)
 }
 
 fn expected_rows(
@@ -255,7 +273,7 @@ fn facts_for(case: &Case, cx: &Context) -> Result<KnownFacts, GatekeepError> {
         (FactId::new("shared")?, presence(case.shared)),
         (
             FactId::new("owner")?,
-            presence(case.owner_id == Some(cx.principal.id())),
+            presence(case.owner_id == Some(cx.principal().id())),
         ),
         (
             FactId::new("nullable_flag")?,
@@ -283,7 +301,13 @@ pub enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
+    Context(#[from] gatekeep::ContextError),
+    #[error(transparent)]
+    Binding(#[from] gatekeep::TenantBindingError),
+    #[error(transparent)]
     Lower(#[from] gatekeep::LowerError),
+    #[error(transparent)]
+    TenantColumn(#[from] gatekeep_sqlx::TenantColumnError),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     #[error("test temporal value should be valid")]

@@ -2,9 +2,12 @@
 
 mod support;
 
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
-use gatekeep::{FactResolver, Presence, ResolveError, SubjectSlot};
+use gatekeep::{AuditEntry, AuditSink, FactResolver, Presence, ResolveError, SubjectSlot};
 use gatekeep_keepsake::{
     FactBinding, KeepsakeResolveError, KeepsakeResolver, KeepsakeTargetError,
     PrincipalSubjectMapper, QueryPresence, tenant_scoped_subject,
@@ -27,18 +30,53 @@ async fn decision_resolution_maps_active_relations_to_known_facts() -> TestResul
         .resolve_for_decision(
             &[fact_id("paid_plan")?, fact_id("resource_member")?],
             &context("tenant_1", principal)?,
+            &gatekeep::SystemClock,
         )
         .await?;
 
-    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
     assert_eq!(
-        facts.presence(&fact_id("resource_member")?),
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Present
+    );
+    assert_eq!(
+        facts.facts().presence(&fact_id("resource_member")?),
         Presence::Absent
     );
     assert_eq!(
         resolver.source().requested_relation_ids()?,
         vec![vec![PaidPlanRelation::ID, ResourceMemberRelation::ID]]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn gatekeeper_uses_application_clock_for_keepsake_observation() -> TestResult<()> {
+    let now = time::OffsetDateTime::UNIX_EPOCH + time::Duration::days(1);
+    let principal = subject("user", "u_1")?;
+    let resolver = resolver_for(&principal)?.with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
+    let audit = RecordingAudit::default();
+    let gatekeeper =
+        gatekeep_axum::Gatekeeper::new(resolver, audit.clone()).with_clock(move || now);
+    let policy = gatekeep::policy::grant((), gatekeep::condition::has::<PaidPlan>());
+
+    let authorized = gatekeeper
+        .authorize(
+            gatekeep::PolicyId::new("paid-plan")?,
+            &policy,
+            context("tenant_1", principal)?,
+        )
+        .await
+        .map_err(|error| std::io::Error::other(format!("authorization failed: {error:?}")))?;
+
+    assert_eq!(authorized.outcome, ());
+    let entries = audit.entries()?;
+    let evidence = entries
+        .first()
+        .and_then(|entry| entry.fact_resolution.as_ref())
+        .ok_or("missing fact-resolution evidence")?;
+    assert_eq!(evidence.observed_at(), now);
+    assert_eq!(entries[0].occurred_at, now);
+    assert_eq!(entries[0].effect, gatekeep::EffectKind::Permit);
     Ok(())
 }
 
@@ -52,14 +90,17 @@ async fn target_for_fact_matches_decision_lookup_target() -> TestResult<()> {
 
     let target = resolver.target_for_fact(&fact_id("paid_plan")?, &cx)?;
     let facts = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?], &cx)
+        .resolve_for_decision(&[fact_id("paid_plan")?], &cx, &gatekeep::SystemClock)
         .await?;
 
-    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
+    assert_eq!(
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Present
+    );
     assert_eq!(target.fact, fact_id("paid_plan")?);
     assert_eq!(
         target.subject,
-        support::tenant_subject("tenant_1", &cx.principal)?
+        support::tenant_subject("tenant_1", cx.principal())?
     );
     assert_eq!(target.relation_id, PaidPlanRelation::ID);
     assert_eq!(target.subject_slot, None);
@@ -78,11 +119,14 @@ async fn decision_resolution_can_bind_distinct_subject_slots() -> TestResult<()>
     let source = subject("purlieu-source", "external/std")?;
     let resolver = KeepsakeResolver::new(
         support::FakeSource::default()
-            .with_active_for_paid_plan(keepsake::SubjectRef::new(skill.kind(), skill.id())?)?
-            .with_active_for_resource_member(keepsake::SubjectRef::new(
-                source.kind(),
-                source.id(),
-            )?)?,
+            .with_active_for_paid_plan(
+                keepsake::TenantId::new("tenant_1")?,
+                keepsake::SubjectRef::new(skill.kind(), skill.id())?,
+            )?
+            .with_active_for_resource_member(
+                keepsake::TenantId::new("tenant_1")?,
+                keepsake::SubjectRef::new(source.kind(), source.id())?,
+            )?,
     )
     .with_binding(FactBinding::for_relation_spec_on_subject::<
         PaidPlan,
@@ -99,12 +143,19 @@ async fn decision_resolution_can_bind_distinct_subject_slots() -> TestResult<()>
     )?;
 
     let facts = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?, fact_id("resource_member")?], &cx)
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?, fact_id("resource_member")?],
+            &cx,
+            &gatekeep::SystemClock,
+        )
         .await?;
 
-    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
     assert_eq!(
-        facts.presence(&fact_id("resource_member")?),
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Present
+    );
+    assert_eq!(
+        facts.facts().presence(&fact_id("resource_member")?),
         Presence::Present
     );
     let mut requested = resolver.source().requested_relation_ids()?;
@@ -151,11 +202,15 @@ async fn tenant_scoped_mapping_keeps_equal_principals_separate() -> TestResult<(
         .with_relation_spec::<ResourceMember, ResourceMemberRelation>()?;
 
     let tenant_two = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?], &context("tenant_2", principal)?)
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?],
+            &context("tenant_2", principal)?,
+            &gatekeep::SystemClock,
+        )
         .await?;
 
     assert_eq!(
-        tenant_two.presence(&fact_id("paid_plan")?),
+        tenant_two.facts().presence(&fact_id("paid_plan")?),
         Presence::Absent
     );
     Ok(())
@@ -171,11 +226,14 @@ async fn tenant_scoped_mapping_does_not_collide_on_colons() -> TestResult<()> {
         .resolve_for_decision(
             &[fact_id("paid_plan")?],
             &context("a", subject("b:c", "u_1")?)?,
+            &gatekeep::SystemClock,
         )
         .await?;
 
     assert_eq!(
-        colliding_join_shape.presence(&fact_id("paid_plan")?),
+        colliding_join_shape
+            .facts()
+            .presence(&fact_id("paid_plan")?),
         Presence::Absent
     );
     Ok(())
@@ -184,15 +242,44 @@ async fn tenant_scoped_mapping_does_not_collide_on_colons() -> TestResult<()> {
 #[tokio::test]
 async fn principal_only_mapping_is_available_for_existing_subject_schemes() -> TestResult<()> {
     let principal = subject("user", "u_1")?;
-    let resolver = principal_resolver_for(&principal)?
+    let resolver = principal_resolver_for("tenant_2", &principal)?
         .map_subjects(PrincipalSubjectMapper)
         .with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
 
     let facts = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?], &context("tenant_2", principal)?)
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?],
+            &context("tenant_2", principal)?,
+            &gatekeep::SystemClock,
+        )
         .await?;
 
-    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
+    assert_eq!(
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Present
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn principal_only_mapping_still_requires_the_requested_tenant() -> TestResult<()> {
+    let principal = subject("user", "u_1")?;
+    let resolver = principal_resolver_for("tenant_1", &principal)?
+        .map_subjects(PrincipalSubjectMapper)
+        .with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
+
+    let facts = resolver
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?],
+            &context("tenant_2", principal)?,
+            &gatekeep::SystemClock,
+        )
+        .await?;
+
+    assert_eq!(
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Absent
+    );
     Ok(())
 }
 
@@ -209,12 +296,16 @@ async fn query_resolution_can_mix_known_and_deferred_facts() -> TestResult<()> {
         .resolve_for_query(
             &[fact_id("paid_plan")?, fact_id("resource_member")?],
             &context("tenant_1", principal)?,
+            &gatekeep::SystemClock,
         )
         .await?;
 
-    assert_eq!(facts.presence(&fact_id("paid_plan")?), Presence::Present);
     assert_eq!(
-        facts.presence(&fact_id("resource_member")?),
+        facts.facts().presence(&fact_id("paid_plan")?),
+        Presence::Present
+    );
+    assert_eq!(
+        facts.facts().presence(&fact_id("resource_member")?),
         Presence::Unknown
     );
     assert_eq!(
@@ -230,7 +321,11 @@ async fn missing_fact_reports_resolve_error_without_source_lookup() -> TestResul
     let resolver = resolver_for(&principal)?;
 
     let result = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?], &context("tenant_1", principal)?)
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?],
+            &context("tenant_1", principal)?,
+            &gatekeep::SystemClock,
+        )
         .await;
 
     assert!(matches!(
@@ -267,7 +362,11 @@ async fn missing_subject_slot_reports_context_error_without_source_lookup() -> T
         >(slot.clone())?);
 
     let result = resolver
-        .resolve_for_decision(&[fact_id("paid_plan")?], &context("tenant_1", principal)?)
+        .resolve_for_decision(
+            &[fact_id("paid_plan")?],
+            &context("tenant_1", principal)?,
+            &gatekeep::SystemClock,
+        )
         .await;
 
     assert!(matches!(
@@ -329,6 +428,7 @@ async fn source_errors_are_preserved_as_backend_errors() -> TestResult<()> {
         .resolve_for_decision(
             &[fact_id("paid_plan")?],
             &context("tenant_1", subject("user", "u_1")?)?,
+            &gatekeep::SystemClock,
         )
         .await;
 
@@ -375,4 +475,31 @@ fn tenant_scoped_subject_helper_matches_default_mapper() -> TestResult<()> {
         support::tenant_subject("tenant_1", &subject("user", "u_1")?)?
     );
     Ok(())
+}
+
+#[derive(Clone, Default)]
+struct RecordingAudit {
+    entries: Arc<Mutex<Vec<AuditEntry>>>,
+}
+
+impl RecordingAudit {
+    fn entries(&self) -> Result<Vec<AuditEntry>, StoreError> {
+        self.entries
+            .lock()
+            .map_err(|_| StoreError::Poisoned)
+            .map(|entries| entries.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditSink for RecordingAudit {
+    type Error = StoreError;
+
+    async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
+        self.entries
+            .lock()
+            .map_err(|_| StoreError::Poisoned)?
+            .push(entry.clone());
+        Ok(())
+    }
 }

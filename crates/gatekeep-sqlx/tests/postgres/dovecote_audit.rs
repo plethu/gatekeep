@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
 };
-use gatekeep::{DecisionAuditId, RequestId};
+use gatekeep::RequestId;
 use gatekeep_sqlx::{DecisionAuditConfig, PgDovecoteAudit, decode_decision_audit};
 use sqlx::{PgPool, postgres::PgPoolOptions, query_as, query_scalar, raw_sql};
 use time::OffsetDateTime;
@@ -74,14 +74,11 @@ async fn postgres_dovecote_audit_maps_replays_and_decodes_the_complete_event() -
     assert_eq!(delivery.2, None);
 
     let adapter = dovecote_sqlx_postgres::PostgresDovecote::new(pool.clone());
-    let page = adapter.page(None, Limit::new(10)?).await?;
+    let page = adapter.admin().page(None, Limit::new(10)?).await?;
     assert_eq!(page.len(), 1);
     assert_eq!(page[0].event().id().as_str(), "gatekeep-audit-decision-1");
     assert_eq!(page[0].delivery().state(), dovecote::DeliveryState::Pending);
-    assert_eq!(
-        decode_decision_audit(sink.config(), page[0].event())?,
-        entry
-    );
+    assert_eq!(decode_decision_audit(sink.config(), &page[0])?, entry);
     Ok(())
 }
 
@@ -144,7 +141,7 @@ async fn postgres_dovecote_audit_rejects_changed_immutable_content() -> TestResu
 }
 
 #[test]
-fn postgres_history_decode_accepts_reserved_legacy_identity_only_in_history() -> TestResult<()> {
+fn postgres_current_decoder_rejects_reserved_legacy_identity() -> TestResult<()> {
     let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
     let entry = audit_support::audit_entry()?;
     let mut payload = serde_json::to_value(&entry)?;
@@ -161,10 +158,18 @@ fn postgres_history_decode_accepts_reserved_legacy_identity_only_in_history() ->
     .build()?
     .into_stored()?;
 
-    let imported = decode_decision_audit(&config, &event)?;
-    assert_eq!(imported.decision_audit_id.as_str(), "legacy-outbox-42");
-    assert_eq!(serde_json::to_value(&imported)?, payload);
-    assert!(DecisionAuditId::new("legacy-outbox-42").is_err());
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+    assert!(decode_decision_audit(&config, &page).is_err());
     Ok(())
 }
 

@@ -11,9 +11,10 @@ use std::{
 
 use async_trait::async_trait;
 use gatekeep::{
-    AuditEntry, AuditSink, Context, DecisionSummary, Fact, FactId, FactResolver, KnownFacts,
-    Lattice, Locale, PartialFacts, Policy, PolicyObserver, ReasonCatalog, ResolveError,
-    StaticFactId, SubjectRef, TenantId, condition, policy,
+    ApplicationVerifiedTenantBinding, AuditEntry, AuditSink, BindingAuthority, BindingProvenance,
+    Clock, Context, DecisionSummary, EvidenceDigest, Fact, FactId, FactResolution, FactResolver,
+    KnownFacts, Lattice, Locale, PartialFacts, Policy, PolicyObserver, ReasonCatalog, ResolveError,
+    StaticFactId, SubjectRef, TenantBinding, TenantBindingEvidence, TenantId, condition, policy,
 };
 use gatekeep_axum::GatekeepRejection;
 
@@ -60,16 +61,26 @@ impl FactResolver for StaticResolver {
         &self,
         _required: &[FactId],
         _cx: &Context,
-    ) -> Result<KnownFacts, ResolveError<Self::Error>> {
-        Ok(self.facts.clone())
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
+        let source = BindingProvenance::new("test.static-resolver").ok();
+        let revision = BindingProvenance::new("test.static-revision").ok();
+        FactResolution::new(
+            self.facts.clone(),
+            source.map(|source| gatekeep::FactResolutionMetadata::new(source, revision, None)),
+            clock.now_utc(),
+        )
+        .map_err(ResolveError::Resolution)
     }
 
     async fn resolve_for_query(
         &self,
         _required: &[FactId],
         _cx: &Context,
-    ) -> Result<PartialFacts, ResolveError<Self::Error>> {
-        Ok(PartialFacts::new())
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
+        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
+            .map_err(ResolveError::Resolution)
     }
 }
 
@@ -222,21 +233,39 @@ pub fn hidden_read_policy() -> Result<Policy<Access>, gatekeep::GatekeepError> {
     Ok(read_policy()?.hidden())
 }
 
-pub fn context() -> Result<Context, gatekeep::GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new("tenant_a")?,
-        principal: SubjectRef::new("user", "mari")?,
-        subjects: std::collections::BTreeMap::new(),
-        locale: Locale::new("en-US")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+pub fn context() -> Result<Context, TestError> {
+    let now = time::OffsetDateTime::now_utc();
+    let tenant = TenantId::new("tenant_a")?;
+    let binding = ApplicationVerifiedTenantBinding::new(
+        tenant.clone(),
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now - time::Duration::minutes(1),
+        now + time::Duration::hours(1),
+    )?;
+    Ok(Context::new_at(
+        tenant,
+        TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "mari")?,
+        Locale::new("en-US")?,
+        now,
+    )?)
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] gatekeep::GatekeepError),
+    #[error(transparent)]
+    Context(#[from] gatekeep::ContextError),
+    #[error(transparent)]
+    Binding(#[from] gatekeep::TenantBindingError),
     #[error(transparent)]
     Occurrence(#[from] gatekeep::DecisionAuditOccurrenceError),
     #[error(transparent)]

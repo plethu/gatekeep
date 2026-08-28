@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use gatekeep::{
-    Context, Fact, FactId, FactResolver, KnownFacts, PartialFacts, Presence, ResolveError,
+    Clock, Context, Fact, FactId, FactResolution, FactResolver, KnownFacts, PartialFacts, Presence,
+    ResolveError,
 };
 use keepsake::{ActiveRelation, ActiveRelationSource, RelationId, RelationSpec};
 
@@ -182,8 +183,14 @@ where
         binding: &FactBinding,
         cx: &Context,
     ) -> Result<KeepsakeRelationTarget, KeepsakeTargetError> {
+        let tenant_id = keepsake::TenantId::new(cx.tenant().as_str()).map_err(|source| {
+            KeepsakeTargetError::Tenant {
+                fact: binding.fact.clone(),
+                source,
+            }
+        })?;
         let subject = if let Some(slot) = &binding.subject_slot {
-            let Some(subject) = cx.subjects.get(slot) else {
+            let Some(subject) = cx.subjects().get(slot) else {
                 return Err(KeepsakeTargetError::MissingSubjectSlot {
                     fact: binding.fact.clone(),
                     slot: slot.clone(),
@@ -205,6 +212,7 @@ where
         };
 
         Ok(KeepsakeRelationTarget {
+            tenant_id,
             fact: binding.fact.clone(),
             subject,
             relation_id: binding.relation_id,
@@ -261,7 +269,8 @@ where
         &self,
         required: &[FactId],
         cx: &Context,
-    ) -> Result<KnownFacts, ResolveError<Self::Error>> {
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
         let bindings = self.bindings_for(required)?;
         let active_relations = self.active_relation_ids_by_subject(cx, &bindings).await?;
         let entries = bindings.into_iter().map(|binding| {
@@ -272,14 +281,20 @@ where
             );
             (binding.fact.clone(), presence)
         });
-        Ok(KnownFacts::from_entries(entries).map_err(KeepsakeResolveError::Gatekeep)?)
+        FactResolution::new(
+            KnownFacts::from_entries(entries).map_err(KeepsakeResolveError::Gatekeep)?,
+            None,
+            clock.now_utc(),
+        )
+        .map_err(ResolveError::Resolution)
     }
 
     async fn resolve_for_query(
         &self,
         required: &[FactId],
         cx: &Context,
-    ) -> Result<PartialFacts, ResolveError<Self::Error>> {
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
         let bindings = self.bindings_for(required)?;
         let needs_active_lookup = bindings
             .iter()
@@ -307,7 +322,8 @@ where
             };
             (binding.fact.clone(), presence)
         });
-        Ok(PartialFacts::from_entries(entries))
+        FactResolution::new(PartialFacts::from_entries(entries), None, clock.now_utc())
+            .map_err(ResolveError::Resolution)
     }
 }
 
@@ -347,7 +363,8 @@ where
                     KeepsakeTargetError::MissingSubjectSlot { fact, slot } => {
                         ResolveError::MissingSubject { fact, slot }
                     }
-                    KeepsakeTargetError::Subject { source, .. } => {
+                    KeepsakeTargetError::Subject { source, .. }
+                    | KeepsakeTargetError::Tenant { source, .. } => {
                         ResolveError::Backend(KeepsakeResolveError::from(source))
                     }
                 })?;
@@ -361,12 +378,14 @@ where
                 .insert(target.relation_id);
         }
 
+        let tenant_id = keepsake::TenantId::new(cx.tenant().as_str())
+            .map_err(|source| ResolveError::Backend(KeepsakeResolveError::from(source)))?;
         let mut active = BTreeSet::new();
         for (slot, lookup) in grouped {
             let relation_ids = lookup.relation_ids.into_iter().collect::<Vec<_>>();
             let active_relations = self
                 .source
-                .active_relations_for_subject_by_ids(&lookup.subject, &relation_ids)
+                .active_relations_for_subject_by_ids(&tenant_id, &lookup.subject, &relation_ids)
                 .await
                 .map_err(KeepsakeResolveError::Source)?;
             for relation_id in active_relation_ids(active_relations) {

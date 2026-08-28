@@ -5,7 +5,7 @@
 >
 > — Emily Dickinson, "Exclusion" (1890)
 
-`gatekeep` is a code-first authorization engine for Rust. Policies are ordinary
+`gatekeep` 3.0 is a code-first authorization engine for Rust. Policies are ordinary
 Rust values, a pure deterministic core evaluates them, and every decision
 carries the reasons that produced it.
 
@@ -85,6 +85,10 @@ authorization boundary; it does not authenticate requests, manage sessions or
 tenancy, provide a network policy service, or define a separate policy DSL.
 Those concerns remain with application code or a crate built for them.
 
+Tenant binding is explicit: the application verifies identity and tenant
+membership, then constructs a bounded binding that Gatekeep checks for match
+and freshness. Gatekeep does not verify OIDC/JWT tokens or execute obligations.
+
 Each policy is inspectable data. Gatekeep can serialize and hash it, explain a
 decision, and answer "which resources can this principal reach?", not just "may
 this principal reach this one?".
@@ -101,7 +105,7 @@ For durable decision audit, configure an application-owned absolute source URI
 and a Dovecote-backed `AuditSink`. `gatekeep-sqlx` provides
 `PgDovecoteAudit`, `SqliteDovecoteAudit`, and `MySqlDovecoteAudit`. Install the
 selected Dovecote schema, call the adapter's `check_schema`, then pass the sink
-to `Gatekeeper::with_audit_sink`. The Axum adapter awaits the audit write before
+to `Gatekeeper::new(resolver, audit)`. The Axum adapter awaits the audit write before
 returning permit or deny. Each decision becomes one complete JSON event and one
 pending Dovecote delivery; Gatekeep does not maintain a parallel audit table or
 outbox.
@@ -109,14 +113,14 @@ outbox.
 The compile-checked [`axum-durable-audit`](examples/axum-durable-audit/src/main.rs)
 example imports `gatekeep_axum::Gatekeeper`, obtains a real application-owned
 `FactResolver`, checks the Dovecote schema, and constructs
-`Gatekeeper::new(resolver).with_audit_sink(PgDovecoteAudit)`. Use that example as
+`Gatekeeper::new(resolver, PgDovecoteAudit)`. Use that example as
 the canonical setup when wiring a service.
 
 Use Dovecote's matching migration under its `migrations/` directory. Export
 workers claim and page Dovecote deliveries; Gatekeep's typed `AuditEntry` is the
 event payload and Dovecote owns delivery lifecycle and retry state. The old
 `gatekeep-sqlx` audit migrations remain in this repository as immutable v1
-upgrade artifacts only; 2.0 has no runtime API for their tables.
+upgrade artifacts only; 3.0 has no runtime API for their tables.
 
 For the lowering walkthrough, see the `gatekeep-sqlx` docs on
 [docs.rs](https://docs.rs/gatekeep-sqlx) and the

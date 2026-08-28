@@ -11,6 +11,10 @@ fmt:
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+supply-chain:
+    if ! command -v cargo-deny >/dev/null 2>&1; then echo "cargo-deny is unavailable; run 'mise install'" >&2; exit 2; fi
+    cargo deny --all-features check advisories bans licenses sources
+
 test:
     cargo test --workspace --all-features
 

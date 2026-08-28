@@ -2,6 +2,52 @@
 
 All notable changes to this project are documented here.
 
+## [3.0.0] - Unreleased
+
+Gatekeep 3.0 is a breaking release prepared for the coordinated Dovecote 0.2
+and Keepsake 3 tenant-aware contracts. It is implementation state only until
+the release gates and sibling revisions are reviewed; no publication is
+implied by this entry.
+
+### `gatekeep`
+
+- Made tenant binding explicit in `Context`, including bounded application
+  verification evidence and freshness checks before and after fact resolution.
+- Replaced separate resolver metadata callbacks with one atomic
+  `FactResolution` envelope carrying source observation time, structurally
+  validating freshness, and always recording a deterministic fact-set digest;
+  future observations and expired results fail closed at the decision
+  boundary.
+- Changed `FactResolver` methods to receive the application-owned `Clock` used
+  by the authorization boundary, keeping resolver observations coherent with
+  replay, freshness validation, and audit timestamps.
+- Added bounded resolver revision, observation, freshness, and fact-set digest
+  evidence to durable `AuditEntry` values without claiming individual-fact
+  provenance or obligation execution.
+- Made unaudited Axum construction explicit instead of using it as the normal
+  `Gatekeeper::new` path.
+
+### `gatekeep-sqlx`
+
+- Validated tenant table and column identifiers and applied typed tenant
+  predicates to both filters and grade projections.
+- Updated Dovecote audit sinks to the tenant-scoped 0.2 adapter API.
+- Made the current history decoder require a tenant-scoped `PagedEvent` and
+  current binding/evidence; legacy-shaped payloads require an explicit,
+  versioned migration importer.
+
+### `gatekeep-keepsake`
+
+- Updated the bridge to Keepsake 3's explicit tenant provider operations.
+- Retained tenant identity on lifecycle targets and commands so equal subject
+  ids cannot cross tenant boundaries through the bridge.
+
+### Migration
+
+Apply the tenant-aware Dovecote 0.2 schema and crates first, then the Keepsake 3
+dependency and bridge, and finally update all Gatekeep crates together. See
+[`docs/operations/migrations.md`](docs/operations/migrations.md).
+
 ## [2.0.1] - 2026-08-28
 
 Patch release for the 2.0 durable-audit integration and documentation.

@@ -14,6 +14,7 @@ mod facts;
 mod identity;
 mod partial;
 mod policy_model;
+mod tenant;
 
 /// Condition builder helpers.
 pub mod condition;
@@ -21,9 +22,11 @@ pub mod condition;
 pub mod policy;
 
 pub use adapters::{
-    AuditEntry, AuditSink, Context, DecisionSummary, EffectKind, FactResolver,
-    IdentityReasonCatalog, LowerError, Lowered, NoopAuditSink, NoopPolicyObserver, PolicyAnchor,
-    PolicyObserver, QueryLowering, ReasonCatalog, ResolveError,
+    AuditEntry, AuditEntryError, AuditSink, Clock, Context, ContextError, DecisionSummary,
+    EffectKind, FactResolution, FactResolutionError, FactResolutionEvidence,
+    FactResolutionEvidenceError, FactResolutionMetadata, FactResolver, IdentityReasonCatalog,
+    LowerError, Lowered, NoopAuditSink, NoopPolicyObserver, PolicyAnchor, PolicyObserver,
+    QueryLowering, ReasonCatalog, ResolveError, SystemClock,
 };
 #[cfg(any(test, feature = "test"))]
 pub use audit_memory::{InMemoryAuditError, InMemoryAuditSink};
@@ -35,12 +38,16 @@ pub use evaluate::{evaluate, evaluate_residual, required_facts, required_residua
 pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
     ClauseLabel, DecisionAuditId, DecisionAuditOccurrence, DecisionAuditOccurrenceError, Fact,
-    FactId, GatekeepError, GatekeepResult, Locale, ObligationId, ObligationSpec, ParamKey,
-    PolicyHash, PolicyId, ReasonCode, RequestId, StaticClauseLabel, StaticFactId,
-    StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId, StaticSubjectSlot,
-    StaticTenantId, SubjectRef, SubjectSlot, TenantId,
+    FactId, GatekeepError, GatekeepResult, Locale, MAX_TENANT_ID_BYTES, ObligationId,
+    ObligationSpec, ParamKey, PolicyHash, PolicyId, ReasonCode, RequestId, StaticClauseLabel,
+    StaticFactId, StaticObligationId, StaticParamKey, StaticReasonCode, StaticRequestId,
+    StaticSubjectSlot, StaticTenantId, SubjectRef, SubjectSlot, TenantId,
 };
 pub use partial::{Residual, complete_residual, partial_evaluate};
 pub use policy_model::{
     Condition, Lattice, Policy, ResidualPolicy, ResidualPolicyBranch, ResidualPolicyNode,
+};
+pub use tenant::{
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, EvidenceDigest,
+    TenantBinding, TenantBindingError, TenantBindingEvidence, TrustedServiceBinding,
 };

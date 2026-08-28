@@ -46,7 +46,8 @@ pub use fragment::MySqlBackend;
 #[cfg(feature = "sqlite")]
 pub use fragment::SqliteBackend;
 pub use fragment::{
-    GatekeepSqlxBackend, SqlxDriver, SqlxDriverError, SqlxFragment, SqlxValue,
+    GatekeepSqlxBackend, MAX_TENANT_IDENTIFIER_BYTES, SqlxDriver, SqlxDriverError, SqlxFragment,
+    SqlxValue, TenantColumn, TenantColumnError, TenantIdentifierPart,
     infer_enabled_driver_from_url, validate_database_url_for_backend,
 };
 #[cfg(feature = "postgres")]
@@ -138,6 +139,7 @@ where
 pub struct SqlxLowerer<B, P, M = OrdinalProjection> {
     predicates: P,
     projection: M,
+    tenant_column: TenantColumn,
     backend: PhantomData<fn() -> B>,
 }
 
@@ -157,8 +159,8 @@ where
 {
     /// Builds a lowerer using ordinal grade projection.
     #[must_use]
-    pub const fn new(predicates: P) -> Self {
-        Self::with_projection(predicates, OrdinalProjection)
+    pub fn new(predicates: P, tenant_column: TenantColumn) -> Self {
+        Self::with_projection(predicates, OrdinalProjection, tenant_column)
     }
 }
 
@@ -168,10 +170,11 @@ where
 {
     /// Builds a lowerer using a caller-supplied projection strategy.
     #[must_use]
-    pub const fn with_projection(predicates: P, projection: M) -> Self {
+    pub fn with_projection(predicates: P, projection: M, tenant_column: TenantColumn) -> Self {
         Self {
             predicates,
             projection,
+            tenant_column,
             backend: PhantomData,
         }
     }
@@ -190,14 +193,15 @@ where
     where
         P: SqlxFactPredicates<B>,
     {
-        residual.try_fold_pruned(
+        let policy = residual.try_fold_pruned(
             &mut |branch| match branch {
                 ResidualPolicyBranch::OrElseFallback { fallback, .. } => {
                     !fallback.carries_obligation()
                 }
             },
             &mut |node| self.lower_filter_node(node, cx),
-        )
+        )?;
+        Ok(self.enforce_tenant_filter(policy, cx))
     }
 
     fn lower_filter_node<O>(
@@ -267,6 +271,34 @@ where
                 })
             }
         }
+    }
+
+    /// Adds the mandatory typed tenant predicate to an already-built filter.
+    ///
+    /// `lower` and `lower_filter` call this automatically. This method is
+    /// public for applications that have already resolved a policy in memory
+    /// and need to combine its constant filter with the same tenant safety
+    /// contract.
+    #[must_use]
+    pub fn enforce_tenant_filter(&self, policy: SqlxFragment<B>, cx: &Context) -> SqlxFragment<B> {
+        let mut tenant = SqlxFragment::trusted(self.tenant_column.qualified());
+        tenant.push_sql(" = ");
+        tenant.push_fragment(SqlxFragment::bind(cx.tenant().as_str()));
+        SqlxFragment::binary(" AND ", [tenant, policy])
+    }
+
+    /// Adds the mandatory tenant guard to a manually constructed grade
+    /// projection. Callers that consume a [`gatekeep::Lowered`] from an
+    /// in-memory resolved branch must apply this before selecting the grade;
+    /// [`Self::lower`] applies it automatically.
+    #[must_use]
+    pub fn enforce_tenant_projection(
+        &self,
+        grade: SqlxFragment<B>,
+        cx: &Context,
+    ) -> SqlxFragment<B> {
+        let tenant = self.enforce_tenant_filter(SqlxFragment::trusted("TRUE"), cx);
+        case_when(tenant, grade, SqlxFragment::trusted("NULL"))
     }
 
     fn lower_policy<O>(
@@ -372,7 +404,9 @@ where
         residual: &ResidualPolicy<O>,
         cx: &Context,
     ) -> Result<Lowered<Self::Filter, Self::Projection>, LowerError> {
-        let lowered = self.lower_policy(residual, cx)?;
+        let mut lowered = self.lower_policy(residual, cx)?;
+        lowered.filter = self.enforce_tenant_filter(lowered.filter, cx);
+        lowered.grade = self.enforce_tenant_projection(lowered.grade, cx);
         Ok(Lowered {
             filter: lowered.filter,
             grade: lowered.grade,

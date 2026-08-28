@@ -91,8 +91,12 @@ impl MySqlDovecoteAudit {
         transaction: &mut Transaction<'_, MySql>,
         entry: &AuditEntry,
     ) -> Result<EnqueueOutcome, MySqlDovecoteAuditError> {
-        let event = event_from_entry(&self.config, entry)?;
-        Ok(self.dovecote.enqueue(transaction, event).await?)
+        let (tenant, event) = event_from_entry(&self.config, entry)?;
+        Ok(self
+            .dovecote
+            .for_tenant(tenant)
+            .enqueue(transaction, event)
+            .await?)
     }
 }
 

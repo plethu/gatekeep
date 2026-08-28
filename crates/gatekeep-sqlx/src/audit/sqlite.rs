@@ -91,8 +91,12 @@ impl SqliteDovecoteAudit {
         transaction: &mut Transaction<'_, Sqlite>,
         entry: &AuditEntry,
     ) -> Result<EnqueueOutcome, SqliteDovecoteAuditError> {
-        let event = event_from_entry(&self.config, entry)?;
-        Ok(self.dovecote.enqueue(transaction, event).await?)
+        let (tenant, event) = event_from_entry(&self.config, entry)?;
+        Ok(self
+            .dovecote
+            .for_tenant(tenant)
+            .enqueue(transaction, event)
+            .await?)
     }
 }
 

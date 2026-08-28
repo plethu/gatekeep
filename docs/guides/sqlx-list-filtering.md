@@ -19,6 +19,16 @@ request-known branch and leaves the row-level branch for SQL lowering.
 ids to trusted predicates through `SqlxFactPredicates`. That keeps schema
 knowledge in the service.
 
+Construct the lowerer with separately validated table and column identifiers,
+for example `PgLowerer::new(Predicates,
+TenantColumn::new("cases", "tenant_id")?)`. Every lowered filter automatically
+includes a typed SQLx bind for `Context::tenant`; the tenant predicate cannot be
+omitted from the lowerer's normal output. The grade projection is also guarded
+by the same tenant predicate, so selecting it without the filter cannot expose
+a cross-tenant grade. If a policy was already resolved in memory, call both
+`enforce_tenant_filter` and `enforce_tenant_projection` before appending the
+fragments to a query.
+
 Use one policy module for both request checks and list filtering. The list path
 should only add the database mapping from fact ids to row predicates.
 

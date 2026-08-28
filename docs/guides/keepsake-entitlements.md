@@ -8,6 +8,7 @@ Keepsake relations.
 
 The adapter maps a policy fact to a Keepsake target:
 
+- explicit Keepsake tenant id
 - subject kind and id
 - relation id
 - optional request subject slot
@@ -23,7 +24,8 @@ The resolver can expose the same target it uses for reads through
 into a Keepsake `RevokeBySubject` command.
 
 That keeps authorization reads and lifecycle writes aligned without making
-Gatekeep depend on SQLx.
+Gatekeep depend on SQLx. The target retains the tenant so a lifecycle command
+cannot silently fall back to an all-tenant or differently scoped operation.
 
 ## Application Boundary
 

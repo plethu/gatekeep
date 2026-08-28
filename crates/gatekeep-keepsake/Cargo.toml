@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-keepsake"
-version = "2.0.1"
+version = "3.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -16,11 +16,13 @@ documentation = "https://docs.rs/gatekeep-keepsake"
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-gatekeep = { path = "../gatekeep", version = "2.0.1" }
+gatekeep = { path = "../gatekeep", version = "3.0.0" }
 keepsake.workspace = true
 thiserror.workspace = true
+time.workspace = true
 
 [dev-dependencies]
+gatekeep-axum = { path = "../gatekeep-axum", version = "3.0.0" }
 keepsake = { workspace = true, features = ["test"] }
 tokio.workspace = true
 

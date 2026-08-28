@@ -10,7 +10,8 @@ Runs Gatekeep's canonical local project gates:
   1. cargo fmt --all --check
   2. structural Rust checks
   3. cargo clippy --workspace --all-targets --all-features -- -D warnings
-  4. cargo test --workspace --all-features
+  4. cargo deny advisory, ban, license, and source checks
+  5. cargo test --workspace --all-features
 EOF
 }
 
@@ -57,6 +58,13 @@ echo "== cargo clippy =="
 (
   cd "$repo_root"
   cargo clippy --workspace --all-targets --all-features -- -D warnings
+)
+
+echo
+echo "== cargo deny supply-chain checks =="
+(
+  cd "$repo_root"
+  just supply-chain
 )
 
 echo

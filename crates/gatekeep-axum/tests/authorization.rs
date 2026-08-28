@@ -11,15 +11,21 @@ use axum::{
     routing::get,
 };
 use gatekeep::{
-    DecisionAuditId, DecisionAuditOccurrence, KnownFacts, Policy, PolicyId, condition, policy,
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context,
+    DecisionAuditId, DecisionAuditOccurrence, EvidenceDigest, FactId, FactResolution, FactResolver,
+    KnownFacts, Locale, PartialFacts, Policy, PolicyId, ResolveError, SubjectRef, TenantBinding,
+    TenantBindingEvidence, TenantId, condition, policy,
 };
 use gatekeep_axum::{
-    DenialError, DenialResponseConfig, GatekeepRejection, Gatekeeper,
+    DenialError, DenialResponseConfig, GatekeepAxumError, GatekeepRejection, Gatekeeper,
     test_support::{DenialAssertError, ExpectedDenial, assert_denial_response},
 };
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    convert::Infallible,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use support::{
     Access, CaseReader, FailOnceAudit, FailingAudit, RecordingAudit, RecordingObserver,
@@ -34,10 +40,12 @@ use tower::ServiceExt;
 async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
     let audit = RecordingAudit::default();
     let observer = RecordingObserver::default();
-    let gatekeeper = Gatekeeper::new(StaticResolver {
-        facts: KnownFacts::new().with_present::<CaseReader>(),
-    })
-    .with_audit_sink(audit.clone())
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        audit.clone(),
+    )
     .with_observer(observer.clone());
     let policy = read_policy()?;
     let context = context()?;
@@ -49,8 +57,32 @@ async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
     assert_eq!(authorized.outcome, Access::Full);
     let entries = audit.entries()?;
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].tenant, context.tenant);
-    assert_eq!(entries[0].principal, context.principal);
+    assert_eq!(entries[0].tenant, *context.tenant());
+    assert_eq!(entries[0].principal, *context.principal());
+    assert_eq!(entries[0].binding.as_ref(), Some(context.binding()));
+    assert_eq!(
+        entries[0]
+            .fact_resolution
+            .as_ref()
+            .and_then(|value| value.source().map(gatekeep::BindingProvenance::as_str)),
+        Some("test.static-resolver")
+    );
+    let resolution = entries[0]
+        .fact_resolution
+        .as_ref()
+        .ok_or(TestError::MissingAuditOccurrence)?;
+    let authenticated_at = match context.binding() {
+        TenantBinding::ApplicationVerified(binding) => binding.evidence().authenticated_at(),
+        TenantBinding::TrustedService(_) => unreachable!("test uses application binding"),
+    };
+    assert!(resolution.observed_at() >= authenticated_at);
+    assert_ne!(resolution.fact_set_digest().as_bytes(), &[0; 32]);
+    assert_eq!(
+        resolution
+            .revision()
+            .map(gatekeep::BindingProvenance::as_str),
+        Some("test.static-revision")
+    );
     let summaries = observer.summaries()?;
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].consulted.len(), 1);
@@ -63,10 +95,12 @@ async fn audit_identity_and_occurrence_time_are_captured_once() -> Result<(), Te
     let decision_audit_id = DecisionAuditId::new("decision-retry-1")?;
     let occurred_at = OffsetDateTime::UNIX_EPOCH + time::Duration::microseconds(42);
     let occurrence = DecisionAuditOccurrence::new(decision_audit_id.clone(), occurred_at)?;
-    let gatekeeper = Gatekeeper::new(StaticResolver {
-        facts: KnownFacts::new().with_present::<CaseReader>(),
-    })
-    .with_audit_sink(audit.clone());
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        audit.clone(),
+    );
     let context = context()?.with_decision_audit_occurrence(occurrence);
 
     let authorized = gatekeeper
@@ -83,7 +117,7 @@ async fn audit_identity_and_occurrence_time_are_captured_once() -> Result<(), Te
 #[tokio::test]
 async fn ordinary_clock_is_normalized_to_microseconds() -> Result<(), TestError> {
     let before = OffsetDateTime::now_utc();
-    let authorized = Gatekeeper::new(StaticResolver {
+    let authorized = Gatekeeper::unaudited(StaticResolver {
         facts: KnownFacts::new().with_present::<CaseReader>(),
     })
     .authorize(PolicyId::new("case_read")?, &read_policy()?, context()?)
@@ -101,13 +135,15 @@ async fn ordinary_clock_is_normalized_to_microseconds() -> Result<(), TestError>
 }
 
 #[tokio::test]
-async fn ambiguous_audit_failure_replays_the_same_identity_time_and_bytes() -> Result<(), TestError>
-{
+async fn ambiguous_audit_failure_replays_identity_but_refreshes_observation_time()
+-> Result<(), TestError> {
     let audit = FailOnceAudit::default();
-    let gatekeeper = Gatekeeper::new(StaticResolver {
-        facts: KnownFacts::new().with_present::<CaseReader>(),
-    })
-    .with_audit_sink(audit.clone());
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        audit.clone(),
+    );
     let policy_id = PolicyId::new("case_read")?;
     let policy = read_policy()?;
     let context = context()?;
@@ -137,9 +173,29 @@ async fn ambiguous_audit_failure_replays_the_same_identity_time_and_bytes() -> R
         .map_err(|_rejection| TestError::Authorization)?;
     let entries = audit.entries()?;
     assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].decision_audit_id, entries[1].decision_audit_id);
+    assert_eq!(entries[0].occurred_at, entries[1].occurred_at);
     assert_eq!(
-        serde_json::to_vec(&entries[0])?,
-        serde_json::to_vec(&entries[1])?
+        entries[0]
+            .fact_resolution
+            .as_ref()
+            .map(gatekeep::FactResolutionEvidence::fact_set_digest),
+        entries[1]
+            .fact_resolution
+            .as_ref()
+            .map(gatekeep::FactResolutionEvidence::fact_set_digest)
+    );
+    assert!(
+        entries[1]
+            .fact_resolution
+            .as_ref()
+            .ok_or(TestError::MissingAuditOccurrence)?
+            .observed_at()
+            >= entries[0]
+                .fact_resolution
+                .as_ref()
+                .ok_or(TestError::MissingAuditOccurrence)?
+                .observed_at()
     );
     assert_eq!(authorized.audit_occurrence, occurrence);
     Ok(())
@@ -147,7 +203,7 @@ async fn ambiguous_audit_failure_replays_the_same_identity_time_and_bytes() -> R
 
 #[tokio::test]
 async fn forbidden_denial_renders_specific_localized_reason() -> Result<(), TestError> {
-    let gatekeeper = Gatekeeper::new(StaticResolver {
+    let gatekeeper = Gatekeeper::unaudited(StaticResolver {
         facts: KnownFacts::new().with_absent::<CaseReader>(),
     })
     .with_reason_catalog(
@@ -174,7 +230,7 @@ async fn forbidden_denial_renders_specific_localized_reason() -> Result<(), Test
 
 #[tokio::test]
 async fn hidden_denial_uses_generic_not_found_response() -> Result<(), TestError> {
-    let gatekeeper = Gatekeeper::new(StaticResolver {
+    let gatekeeper = Gatekeeper::unaudited(StaticResolver {
         facts: KnownFacts::new().with_absent::<CaseReader>(),
     });
     let state = AppState {
@@ -220,7 +276,7 @@ async fn denial_helper_rejects_extra_serialized_fields() -> Result<(), TestError
 
 #[tokio::test]
 async fn unlabeled_hidden_denial_still_uses_not_found_response() -> Result<(), TestError> {
-    let gatekeeper = Gatekeeper::new(StaticResolver {
+    let gatekeeper = Gatekeeper::unaudited(StaticResolver {
         facts: KnownFacts::new().with_absent::<CaseReader>(),
     });
 
@@ -248,7 +304,7 @@ async fn unlabeled_hidden_denial_still_uses_not_found_response() -> Result<(), T
 
 #[tokio::test]
 async fn hidden_denial_can_render_configured_generic_catalog_reason() -> Result<(), TestError> {
-    let gatekeeper = Gatekeeper::new(StaticResolver {
+    let gatekeeper = Gatekeeper::unaudited(StaticResolver {
         facts: KnownFacts::new().with_absent::<CaseReader>(),
     })
     .with_reason_catalog(ShapeAwareCatalog)
@@ -278,10 +334,12 @@ async fn hidden_denial_can_render_configured_generic_catalog_reason() -> Result<
 #[tokio::test]
 async fn observer_runs_only_after_audit_succeeds() -> Result<(), TestError> {
     let observer = RecordingObserver::default();
-    let gatekeeper = Gatekeeper::new(StaticResolver {
-        facts: KnownFacts::new().with_present::<CaseReader>(),
-    })
-    .with_audit_sink(FailingAudit)
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        FailingAudit,
+    )
     .with_observer(observer.clone());
 
     let rejection = match gatekeeper
@@ -308,10 +366,12 @@ async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestErro
         completed: Arc::clone(&completed),
     };
 
-    let gatekeeper = Gatekeeper::new(StaticResolver {
-        facts: KnownFacts::new().with_present::<CaseReader>(),
-    })
-    .with_audit_sink(audit);
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        audit,
+    );
     let policy_id = PolicyId::new("case_read")?;
     let policy = read_policy()?;
     let context = context()?;
@@ -332,9 +392,141 @@ async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestErro
     Ok(())
 }
 
+#[tokio::test]
+async fn stale_binding_is_rejected_before_fact_resolution() -> Result<(), TestError> {
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let binding = ApplicationVerifiedTenantBinding::new(
+        TenantId::new("tenant_a")?,
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now,
+        now + time::Duration::minutes(1),
+    )?;
+    let context = Context::new_at(
+        TenantId::new("tenant_a")?,
+        TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "mari")?,
+        Locale::new("en-US")?,
+        now,
+    )?;
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let gatekeeper = Gatekeeper::unaudited(CountingResolver {
+        calls: Arc::clone(&calls),
+    })
+    .with_clock(move || now + time::Duration::minutes(2));
+
+    let Err(rejection) = gatekeeper
+        .authorize(PolicyId::new("case_read")?, &read_policy()?, context)
+        .await
+    else {
+        return Err(TestError::ExpectedBoundaryError);
+    };
+
+    assert!(matches!(
+        rejection,
+        GatekeepRejection::Error(GatekeepAxumError::Context(gatekeep::ContextError::Binding(
+            gatekeep::TenantBindingError::Stale { .. }
+        )))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn binding_expiry_during_resolution_is_rejected_before_evaluation_or_audit()
+-> Result<(), TestError> {
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let binding = ApplicationVerifiedTenantBinding::new(
+        TenantId::new("tenant_a")?,
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now,
+        now + time::Duration::minutes(1),
+    )?;
+    let context = Context::new_at(
+        TenantId::new("tenant_a")?,
+        TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "mari")?,
+        Locale::new("en-US")?,
+        now,
+    )?;
+    let clock_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let clock_state = Arc::clone(&clock_calls);
+    let audit = RecordingAudit::default();
+    let gatekeeper = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_present::<CaseReader>(),
+        },
+        audit.clone(),
+    )
+    .with_clock(move || {
+        if clock_state.fetch_add(1, Ordering::SeqCst) == 0 {
+            now
+        } else {
+            now + time::Duration::minutes(2)
+        }
+    });
+
+    let result = gatekeeper
+        .authorize(PolicyId::new("case_read")?, &read_policy()?, context)
+        .await;
+    assert!(matches!(
+        result,
+        Err(GatekeepRejection::Error(GatekeepAxumError::Context(
+            gatekeep::ContextError::Binding(gatekeep::TenantBindingError::Stale { .. })
+        )))
+    ));
+    assert!(audit.entries()?.is_empty());
+    Ok(())
+}
+
 struct BlockingAudit {
     release: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
     completed: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+struct CountingResolver {
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait::async_trait]
+impl FactResolver for CountingResolver {
+    type Error = Infallible;
+
+    async fn resolve_for_decision(
+        &self,
+        _required: &[FactId],
+        _cx: &Context,
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        FactResolution::new(KnownFacts::new(), None, clock.now_utc())
+            .map_err(ResolveError::Resolution)
+    }
+
+    async fn resolve_for_query(
+        &self,
+        _required: &[FactId],
+        _cx: &Context,
+        clock: &dyn Clock,
+    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
+            .map_err(ResolveError::Resolution)
+    }
 }
 
 #[async_trait::async_trait]

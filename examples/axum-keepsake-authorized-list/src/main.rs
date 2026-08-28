@@ -27,6 +27,7 @@ fn resolver_with_staff() -> Result<Resolver, BuildError> {
     let context = request_context()?;
     let source = InMemoryActiveRelations::empty();
     source.insert_active_for_spec::<StaffRelation>(
+        keepsake::TenantId::new(context.tenant().as_str())?,
         0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
         tenant_scoped_subject(&context)?,
         fixed_time()?,

@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 use gatekeep::{
-    AuditEntry, DenialReason, DenyShape, EffectKind, FactId, GatekeepError, ObligationId, ParamKey,
-    PolicyAnchor, PolicyHash, PolicyId, Presence, ReasonCode, ReasonValue, RequestId, SubjectRef,
-    SubjectSlot, TenantId, Trace, TraceClause,
+    AuditEntry, DenialReason, DenyShape, EffectKind, FactId, FactResolution,
+    FactResolutionEvidence, GatekeepError, ObligationId, ParamKey, PolicyAnchor, PolicyHash,
+    PolicyId, Presence, ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding,
+    TenantId, Trace, TraceClause, TrustedServiceBinding,
 };
 use time::OffsetDateTime;
 
@@ -43,6 +44,28 @@ pub fn audit_entry() -> Result<AuditEntry, GatekeepError> {
             consulted: vec![(missing, Presence::Absent)],
             decisive,
         },
+        binding: Some(TenantBinding::TrustedService(
+            TrustedServiceBinding::new(TenantId::new("tenant-1")?, "gatekeep-sqlx-tests").map_err(
+                |_| GatekeepError::InvalidPolicyRecord {
+                    reason: "test binding construction",
+                },
+            )?,
+        )),
+        fact_resolution: Some(
+            FactResolutionEvidence::from_resolution(
+                &FactResolution::new(
+                    gatekeep::KnownFacts::new(),
+                    None,
+                    OffsetDateTime::UNIX_EPOCH,
+                )
+                .map_err(|_| GatekeepError::InvalidPolicyRecord {
+                    reason: "test fact resolution freshness",
+                })?,
+            )
+            .map_err(|_| GatekeepError::InvalidPolicyRecord {
+                reason: "test fact evidence serialization",
+            })?,
+        ),
         tenant: TenantId::new("tenant-1")?,
         principal: SubjectRef::new("user", "mari")?,
         subjects: BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),

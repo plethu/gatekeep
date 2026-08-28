@@ -34,25 +34,43 @@ belongs in a reason catalog such as `gatekeep-fluent`, not in the policy value.
 `AuditEntry` stores the complete decision envelope:
 
 - stable `decision_audit_id` and authoritative `occurred_at`
-- tenant, principal, locale, request id, and named subjects
+- tenant binding, tenant, principal, locale, request id, and named subjects
 - policy anchor
 - effect
 - obligations
 - consulted facts
 - decisive clause and trace data
 - denial reason parameters
+- bounded fact-set evidence: the resolver envelope's source observation time,
+  an optional source and revision, optional freshness deadline, and a
+  fixed-size digest of the complete resolved set. Gatekeep keeps a separate
+  receipt/decision time for binding and freshness checks. Gatekeep does not
+  claim individual fact provenance, and it records the digest even when source
+  metadata is absent.
+
+Current entries must be built with the typed constructor, which requires a
+validated binding whose tenant matches the entry tenant. The optional binding
+and evidence fields exist only for serde compatibility with pre-3.0 bytes. The
+current Dovecote decoder requires a storage-row tenant, binding, and evidence;
+it never silently downgrades a payload to legacy history.
 
 `DecisionAuditId::new` reserves the exact, case-sensitive `legacy-` prefix for
-migration identities. Imported legacy events use that namespace deliberately;
-new decision identities must use another value. `DecisionAuditId::generate()`
-continues to generate UUIDv7 identities and is unaffected by the reservation.
+explicit migration identities. The current decoder does not import those
+records; a separately versioned migration importer must construct and validate
+the historical representation before producing a current entry.
 
 The core `AuditSink` trait is async because durable audit usually performs IO.
-`NoopAuditSink` is available for applications that do not record decisions, and
-the test feature exposes `InMemoryAuditSink` for assertions.
+`Gatekeeper::new` requires an explicit sink; use the unmistakably named
+`Gatekeeper::unaudited` constructor only when durable audit is deliberately out
+of scope. The test feature exposes `InMemoryAuditSink` for assertions.
+
+Obligations in an audit entry describe obligations attached to the selected
+policy path. They are not evidence that obligation execution occurred; the
+application must record execution separately when that matters.
 
 `gatekeep-sqlx` serializes this value into one Dovecote event and pending
 delivery. Dovecote owns SQL persistence, claiming, retries, and paging; the
 Axum adapter awaits the audit sink before returning the authorization result.
-Consumers deduplicate at-least-once publication with CloudEvents `(source,
-id)`.
+Consumers deduplicate at-least-once publication with the tenant-scoped
+Dovecote identity `(tenant_id, source, event_id)`. A transport projection must
+preserve tenant routing alongside the CloudEvents `(source, id)` pair.

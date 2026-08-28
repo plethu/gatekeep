@@ -13,6 +13,9 @@ adapter renders a backend-aware fragment for a `sqlx::QueryBuilder`.
 
 Keep schema knowledge in the application. Fact predicates should be static or
 constructed from trusted code paths, with user values passed as SQLx binds.
+Construct `TenantColumn` from separate validated table and column identifiers;
+the lowerer automatically guards both the `WHERE` filter and grade projection
+with a typed tenant bind.
 
 ## Dovecote Audit Sink
 
@@ -27,7 +30,7 @@ Gatekeep-owned query repository.
 | `MySqlDovecoteAudit` | MySQL and MariaDB |
 
 Each sink implements `gatekeep::AuditSink`, so it can be passed to
-`gatekeep_axum::Gatekeeper::with_audit_sink`. The constructor requires an
+`gatekeep_axum::Gatekeeper::new(resolver, audit)`. The constructor requires an
 application-owned absolute event source. The default stream is
 `gatekeep-audit`, the event type is `gatekeep.decision_audit_recorded`, and the
 content type is `application/json`.
@@ -41,4 +44,4 @@ arbitrary business-state writes made elsewhere.
 
 Install Dovecote's migration for the enabled backend. The old Gatekeep
 migration files remain only for v1 upgrade and reconciliation and are not part
-of the 2.0 runtime schema.
+of the 3.0 runtime schema.

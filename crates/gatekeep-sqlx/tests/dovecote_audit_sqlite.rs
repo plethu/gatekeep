@@ -3,11 +3,14 @@
 
 use std::collections::BTreeMap;
 
-use dovecote::{ContentType, EventData, EventId, EventSource, EventType, NewEvent, StreamName};
+use dovecote::{
+    ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
+};
 use gatekeep::{
-    AuditEntry, DecisionAuditId, DenialReason, DenyShape, EffectKind, FactId, GatekeepError,
-    ObligationId, ParamKey, PolicyAnchor, PolicyHash, PolicyId, Presence, ReasonCode, ReasonValue,
-    RequestId, SubjectRef, SubjectSlot, TenantId, Trace, TraceClause,
+    AuditEntry, DecisionAuditId, DenialReason, DenyShape, EffectKind, FactId, FactResolution,
+    FactResolutionEvidence, GatekeepError, ObligationId, ParamKey, PolicyAnchor, PolicyHash,
+    PolicyId, Presence, ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding,
+    TenantId, Trace, TraceClause, TrustedServiceBinding,
 };
 use gatekeep_sqlx::{DecisionAuditConfig, SqliteDovecoteAudit, decode_decision_audit};
 use sqlx::{SqlitePool, raw_sql, sqlite::SqlitePoolOptions};
@@ -47,6 +50,45 @@ async fn writes_one_complete_dovecote_event_with_stable_identity() -> Result<(),
         scalar(&pool, "SELECT count(*) FROM dovecote_deliveries").await?,
         1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn identical_audit_identity_is_independent_per_tenant() -> Result<(), TestError> {
+    let pool = database().await?;
+    let sink = SqliteDovecoteAudit::new(pool.clone(), "https://audit.example.test/gatekeep")?;
+    let entry_a = audit_entry_for_tenant("tenant-1")?;
+    let entry_b = audit_entry_for_tenant("tenant-2")?;
+
+    assert_eq!(entry_a.decision_audit_id, entry_b.decision_audit_id);
+    sink.record_decision_audit(&entry_a).await?;
+    sink.record_decision_audit(&entry_b).await?;
+
+    let rows: Vec<(String, String, String)> =
+        sqlx::query_as("SELECT tenant_id, source, event_id FROM dovecote_events ORDER BY row_id")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(rows.len(), 2);
+    for (row, tenant) in rows.iter().zip(["tenant-1", "tenant-2"]) {
+        assert_eq!(row.0, tenant);
+        assert_eq!(row.1, "https://audit.example.test/gatekeep");
+        assert_eq!(row.2, "gatekeep-audit-decision-1");
+    }
+
+    let adapter = dovecote_sqlx_sqlite::SqliteDovecote::new(pool);
+    let page_a = adapter
+        .for_tenant(dovecote::TenantId::new("tenant-1")?)
+        .page(None, Limit::new(10)?)
+        .await?;
+    let page_b = adapter
+        .for_tenant(dovecote::TenantId::new("tenant-2")?)
+        .page(None, Limit::new(10)?)
+        .await?;
+    assert_eq!(page_a.len(), 1);
+    assert_eq!(page_b.len(), 1);
+    let config = sink.config();
+    assert_eq!(decode_decision_audit(config, &page_a[0])?, entry_a);
+    assert_eq!(decode_decision_audit(config, &page_b[0])?, entry_b);
     Ok(())
 }
 
@@ -137,12 +179,23 @@ fn typed_history_projection_decodes_live_or_snapshot_event_shape() -> Result<(),
     .build()?
     .into_stored()?;
 
-    assert_eq!(decode_decision_audit(&config, &event)?, entry);
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+    assert_eq!(decode_decision_audit(&config, &page)?, entry);
     Ok(())
 }
 
 #[test]
-fn typed_history_projection_decodes_reserved_legacy_identity_without_widening_new_ids()
+fn current_decoder_rejects_reserved_legacy_identity_without_widening_new_ids()
 -> Result<(), TestError> {
     let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
     let entry = audit_entry()?;
@@ -160,12 +213,92 @@ fn typed_history_projection_decodes_reserved_legacy_identity_without_widening_ne
     .build()?
     .into_stored()?;
 
-    let imported = decode_decision_audit(&config, &event)?;
-    assert_eq!(imported.decision_audit_id.as_str(), "legacy-outbox-42");
-    assert_eq!(serde_json::to_value(&imported)?, payload);
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+    assert!(decode_decision_audit(&config, &page).is_err());
     assert!(DecisionAuditId::new("legacy-outbox-42").is_err());
     assert!(DecisionAuditId::from_legacy_import("Legacy-outbox-42").is_err());
     assert!(DecisionAuditId::from_legacy_import("legacy-").is_err());
+    Ok(())
+}
+
+#[test]
+fn current_decoder_rejects_missing_binding_even_with_a_tenant_row() -> Result<(), TestError> {
+    let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
+    let entry = audit_entry()?;
+    let mut payload = serde_json::to_value(&entry)?;
+    payload["binding"] = serde_json::Value::Null;
+    let event = NewEvent::builder(
+        StreamName::new("gatekeep-audit")?,
+        EventId::new("gatekeep-audit-decision-1")?,
+        EventSource::new("https://audit.example.test/gatekeep")?,
+        EventType::new("gatekeep.decision_audit_recorded")?,
+    )
+    .time(entry.occurred_at)
+    .datacontenttype(ContentType::new("application/json")?)
+    .data(EventData::json(serde_json::to_vec(&payload)?)?)
+    .build()?
+    .into_stored()?;
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+    assert!(matches!(
+        decode_decision_audit(&config, &page),
+        Err(gatekeep_sqlx::DecisionAuditDecodeError::Entry(
+            gatekeep::AuditEntryError::MissingBinding
+        ))
+    ));
+    Ok(())
+}
+
+#[test]
+fn tenant_aware_decoder_rejects_payload_row_tenant_mismatch() -> Result<(), TestError> {
+    let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
+    let entry = audit_entry()?;
+    let event = NewEvent::builder(
+        StreamName::new("gatekeep-audit")?,
+        EventId::new("gatekeep-audit-decision-1")?,
+        EventSource::new("https://audit.example.test/gatekeep")?,
+        EventType::new("gatekeep.decision_audit_recorded")?,
+    )
+    .time(entry.occurred_at)
+    .datacontenttype(ContentType::new("application/json")?)
+    .data(EventData::json(serde_json::to_vec(&entry)?)?)
+    .build()?
+    .into_stored()?;
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-2")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+
+    assert!(matches!(
+        gatekeep_sqlx::decode_decision_audit(&config, &page),
+        Err(gatekeep_sqlx::DecisionAuditDecodeError::UnexpectedShape { field: "tenant" })
+    ));
     Ok(())
 }
 
@@ -185,6 +318,11 @@ async fn scalar(pool: &SqlitePool, sql: &'static str) -> Result<i64, sqlx::Error
 }
 
 fn audit_entry() -> Result<AuditEntry, GatekeepError> {
+    audit_entry_for_tenant("tenant-1")
+}
+
+fn audit_entry_for_tenant(tenant_name: &str) -> Result<AuditEntry, GatekeepError> {
+    let tenant = TenantId::new(tenant_name)?;
     let missing = FactId::new("owner")?;
     let mut params = BTreeMap::new();
     params.insert(
@@ -220,7 +358,29 @@ fn audit_entry() -> Result<AuditEntry, GatekeepError> {
             consulted: vec![(missing, Presence::Absent)],
             decisive,
         },
-        tenant: TenantId::new("tenant-1")?,
+        binding: Some(TenantBinding::TrustedService(
+            TrustedServiceBinding::new(tenant.clone(), "gatekeep-sqlx-tests").map_err(|_| {
+                GatekeepError::InvalidPolicyRecord {
+                    reason: "test binding construction",
+                }
+            })?,
+        )),
+        fact_resolution: Some(
+            FactResolutionEvidence::from_resolution(
+                &FactResolution::new(
+                    gatekeep::KnownFacts::new(),
+                    None,
+                    OffsetDateTime::UNIX_EPOCH,
+                )
+                .map_err(|_| GatekeepError::InvalidPolicyRecord {
+                    reason: "test fact resolution freshness",
+                })?,
+            )
+            .map_err(|_| GatekeepError::InvalidPolicyRecord {
+                reason: "test fact evidence serialization",
+            })?,
+        ),
+        tenant,
         principal: SubjectRef::new("user", "mari")?,
         subjects: BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),
         locale: gatekeep::Locale::new("en-US")?,
@@ -245,6 +405,8 @@ enum TestError {
     Dovecote(#[from] dovecote::ValidationError),
     #[error(transparent)]
     DovecoteEnqueue(#[from] dovecote_sqlx_sqlite::EnqueueError),
+    #[error(transparent)]
+    DovecotePage(#[from] dovecote_sqlx_sqlite::PageError),
     #[error(transparent)]
     Decode(#[from] gatekeep_sqlx::DecisionAuditDecodeError),
     #[error("changed content unexpectedly succeeded")]

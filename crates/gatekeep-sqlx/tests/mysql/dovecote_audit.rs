@@ -4,10 +4,10 @@ use std::sync::OnceLock;
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
 };
-use gatekeep::{DecisionAuditId, RequestId};
+use gatekeep::RequestId;
 use gatekeep_sqlx::{DecisionAuditConfig, MySqlDovecoteAudit, decode_decision_audit};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions, query_as, query_scalar, raw_sql};
-use time::PrimitiveDateTime;
+use time::{OffsetDateTime, PrimitiveDateTime};
 
 #[path = "../dovecote_audit_support/mod.rs"]
 mod audit_support;
@@ -77,14 +77,11 @@ async fn mysql_dovecote_audit_maps_replays_and_decodes_the_complete_event() -> T
     assert_eq!(delivery.1, 0);
 
     let adapter = dovecote_sqlx_mysql::MySqlDovecote::new(pool.clone());
-    let page = adapter.page(None, Limit::new(10)?).await?;
+    let page = adapter.admin().page(None, Limit::new(10)?).await?;
     assert_eq!(page.len(), 1);
     assert_eq!(page[0].event().id().as_str(), "gatekeep-audit-decision-1");
     assert_eq!(page[0].delivery().state(), dovecote::DeliveryState::Pending);
-    assert_eq!(
-        decode_decision_audit(sink.config(), page[0].event())?,
-        entry
-    );
+    assert_eq!(decode_decision_audit(sink.config(), &page[0])?, entry);
     Ok(())
 }
 
@@ -147,7 +144,7 @@ async fn mysql_dovecote_audit_rejects_changed_immutable_content() -> TestResult<
 }
 
 #[test]
-fn mysql_history_decode_accepts_reserved_legacy_identity_only_in_history() -> TestResult<()> {
+fn mysql_current_decoder_rejects_reserved_legacy_identity() -> TestResult<()> {
     let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
     let entry = audit_support::audit_entry()?;
     let mut payload = serde_json::to_value(&entry)?;
@@ -164,10 +161,18 @@ fn mysql_history_decode_accepts_reserved_legacy_identity_only_in_history() -> Te
     .build()?
     .into_stored()?;
 
-    let imported = decode_decision_audit(&config, &event)?;
-    assert_eq!(imported.decision_audit_id.as_str(), "legacy-outbox-42");
-    assert_eq!(serde_json::to_value(&imported)?, payload);
-    assert!(DecisionAuditId::new("legacy-outbox-42").is_err());
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+    assert!(decode_decision_audit(&config, &page).is_err());
     Ok(())
 }
 
@@ -217,34 +222,11 @@ async fn prepare_database(pool: &MySqlPool) -> Result<(), Box<dyn Error>> {
 }
 
 async fn install_dovecote_schema(pool: &MySqlPool) -> Result<(), Box<dyn Error>> {
-    // The migration contains trigger bodies with semicolons. Keep those
-    // bodies together while executing the release artifact statement by
-    // statement, as the Dovecote MySQL live gate does.
-    let mut trigger = false;
-    let mut buffered = String::new();
-    for fragment in dovecote_sqlx_mysql::MIGRATIONS[0].sql().split(';') {
-        let fragment = fragment.trim();
-        if fragment.is_empty() {
-            continue;
-        }
-
-        if fragment.to_ascii_uppercase().starts_with("CREATE TRIGGER") || trigger {
-            if !buffered.is_empty() {
-                buffered.push(';');
-            }
-            buffered.push_str(fragment);
-            trigger = !fragment.to_ascii_uppercase().ends_with("END");
-            if trigger {
-                continue;
-            }
-
-            let statement: &'static str = Box::leak(buffered.clone().into_boxed_str());
-            raw_sql(statement).execute(pool).await?;
-            buffered.clear();
-            continue;
-        }
-
-        sqlx::query(fragment).execute(pool).await?;
-    }
+    // MySQL trigger bodies contain semicolons. Send the complete release
+    // artifact through SQLx's raw/unprepared multi-statement protocol so the
+    // server, rather than a client-side splitter, parses the trigger bodies.
+    raw_sql(dovecote_sqlx_mysql::MIGRATIONS[0].sql())
+        .execute(pool)
+        .await?;
     Ok(())
 }

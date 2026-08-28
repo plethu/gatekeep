@@ -5,11 +5,13 @@
 mod dovecote_audit;
 
 use gatekeep::{
-    Condition, Context, Effect, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, Presence,
-    QueryLowering, StaticFactId, SubjectRef, TenantId, condition, evaluate_residual,
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Condition, Context,
+    Effect, EvidenceDigest, Fact, FactId, GatekeepError, KnownFacts, Lattice, Locale, Presence,
+    QueryLowering, StaticFactId, SubjectRef, TenantBinding, TenantBindingEvidence, TenantId,
+    condition, evaluate_residual,
 };
 use gatekeep_sqlx::{
-    MySqlBackend, SqlOutcome, SqlxFactPredicates, SqlxFragment, SqlxLowerer,
+    MySqlBackend, SqlOutcome, SqlxFactPredicates, SqlxFragment, SqlxLowerer, TenantColumn,
     validate_database_url_for_backend,
 };
 use sqlx::{MySql, MySqlPool, QueryBuilder, mysql::MySqlPoolOptions};
@@ -68,7 +70,7 @@ impl SqlxFactPredicates<MySqlBackend> for Predicates {
             "shared" => Some(SqlxFragment::trusted("cases.shared")),
             "owner" => {
                 let mut fragment = SqlxFragment::trusted("cases.owner_id = ");
-                fragment.push_fragment(SqlxFragment::bind(cx.principal.id()));
+                fragment.push_fragment(SqlxFragment::bind(cx.principal().id()));
                 Some(fragment)
             }
             _ => None,
@@ -102,7 +104,11 @@ async fn selected_rows(
     cx: &Context,
     residual: &gatekeep::ResidualPolicy<Tier>,
 ) -> TestResult<Vec<(i32, i64)>> {
-    let lowered = SqlxLowerer::<MySqlBackend, _, _>::new(Predicates).lower(residual, cx)?;
+    let lowered = SqlxLowerer::<MySqlBackend, _, _>::new(
+        Predicates,
+        TenantColumn::new("cases", "tenant_id")?,
+    )
+    .lower(residual, cx)?;
     let mut query = QueryBuilder::<MySql>::new("SELECT cases.id, ");
     lowered.grade.push_to(&mut query);
     query.push(" AS grade FROM cases WHERE ");
@@ -129,6 +135,7 @@ async fn reset_database(pool: &MySqlPool) -> TestResult<()> {
         r"
         create table cases (
             id integer primary key,
+            tenant_id text not null,
             shared boolean not null,
             owner_id text
         )
@@ -143,11 +150,12 @@ async fn insert_cases(pool: &MySqlPool, cases: &[Case]) -> TestResult<()> {
     for case in cases {
         sqlx::query(
             r"
-            insert into cases (id, shared, owner_id)
-            values (?, ?, ?)
+            insert into cases (id, tenant_id, shared, owner_id)
+            values (?, ?, ?, ?)
             ",
         )
         .bind(case.id)
+        .bind("tenant-1")
         .bind(case.shared)
         .bind(case.owner_id)
         .execute(pool)
@@ -199,15 +207,29 @@ const fn cases() -> [Case; 4] {
     ]
 }
 
-fn cx() -> Result<Context, GatekeepError> {
-    Ok(Context {
-        tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef::new("user", "subject-1")?,
-        subjects: std::collections::BTreeMap::new(),
-        locale: Locale::new("en-GB")?,
-        request_id: None,
-        decision_audit_occurrence: None,
-    })
+fn cx() -> TestResult<Context> {
+    let now = time::OffsetDateTime::UNIX_EPOCH;
+    let tenant = TenantId::new("tenant-1")?;
+    let binding = ApplicationVerifiedTenantBinding::new(
+        tenant.clone(),
+        TenantBindingEvidence::new(
+            BindingAuthority::Issuer {
+                issuer: BindingProvenance::new("test")?,
+                key_id: None,
+            },
+            now,
+            EvidenceDigest::new([0; 32]),
+        ),
+        now,
+        now + time::Duration::hours(1),
+    )?;
+    Ok(Context::new_at(
+        tenant,
+        TenantBinding::ApplicationVerified(binding),
+        SubjectRef::new("user", "subject-1")?,
+        Locale::new("en-GB")?,
+        now,
+    )?)
 }
 
 fn expected_rows(
@@ -230,7 +252,7 @@ fn facts_for(case: &Case, cx: &Context) -> Result<KnownFacts, GatekeepError> {
         (FactId::new("shared")?, presence(case.shared)),
         (
             FactId::new("owner")?,
-            presence(case.owner_id == Some(cx.principal.id())),
+            presence(case.owner_id == Some(cx.principal().id())),
         ),
     ])
 }
@@ -254,7 +276,13 @@ enum TestError {
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
+    Context(#[from] gatekeep::ContextError),
+    #[error(transparent)]
+    Binding(#[from] gatekeep::TenantBindingError),
+    #[error(transparent)]
     Lower(#[from] gatekeep::LowerError),
+    #[error(transparent)]
+    TenantColumn(#[from] gatekeep_sqlx::TenantColumnError),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 }

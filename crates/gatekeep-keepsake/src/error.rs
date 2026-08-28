@@ -44,4 +44,15 @@ pub enum KeepsakeTargetError {
         #[source]
         source: KeepsakeError,
     },
+
+    /// Gatekeep's validated tenant could not be represented as a keepsake
+    /// tenant identity.
+    #[error("keepsake tenant validation failed for fact {fact}")]
+    Tenant {
+        /// Fact whose tenant conversion failed.
+        fact: FactId,
+        /// Validation failure from keepsake.
+        #[source]
+        source: KeepsakeError,
+    },
 }
