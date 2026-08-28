@@ -86,17 +86,20 @@ fn validate_tenant_id(value: impl Into<String>) -> GatekeepResult<String> {
     if value.is_empty() {
         return Err(GatekeepError::EmptyIdentifier { field: "tenant_id" });
     }
+
     if value.len() > MAX_TENANT_ID_BYTES {
         return Err(GatekeepError::TenantIdTooLong {
             max_bytes: MAX_TENANT_ID_BYTES,
             actual_bytes: value.len(),
         });
     }
+
     for character in value.chars() {
         let code_point = character as u32;
         if character.is_control() {
             return Err(GatekeepError::TenantIdControlCharacter { code_point });
         }
+
         if (0xFDD0..=0xFDEF).contains(&code_point)
             || code_point & 0xFFFF == 0xFFFF
             || code_point & 0xFFFF == 0xFFFE
@@ -104,6 +107,7 @@ fn validate_tenant_id(value: impl Into<String>) -> GatekeepResult<String> {
             return Err(GatekeepError::TenantIdNoncharacter { code_point });
         }
     }
+
     Ok(value)
 }
 
@@ -237,22 +241,25 @@ const fn assert_valid_static_tenant_id(value: &str) {
     let mut index = 0;
     while index < bytes.len() {
         let first = bytes[index];
-        let (code_point, width) = if first < 0x80 {
-            (first as u32, 1)
-        } else if first < 0xE0 {
-            let code_point = ((first & 0x1F) as u32) << 6 | (bytes[index + 1] & 0x3F) as u32;
-            (code_point, 2)
-        } else if first < 0xF0 {
-            let code_point = ((first & 0x0F) as u32) << 12
-                | ((bytes[index + 1] & 0x3F) as u32) << 6
-                | (bytes[index + 2] & 0x3F) as u32;
-            (code_point, 3)
-        } else {
-            let code_point = ((first & 0x07) as u32) << 18
-                | ((bytes[index + 1] & 0x3F) as u32) << 12
-                | ((bytes[index + 2] & 0x3F) as u32) << 6
-                | (bytes[index + 3] & 0x3F) as u32;
-            (code_point, 4)
+        let (code_point, width) = match first {
+            0x00..=0x7F => (first as u32, 1),
+            0x80..=0xDF => {
+                let code_point = ((first & 0x1F) as u32) << 6 | (bytes[index + 1] & 0x3F) as u32;
+                (code_point, 2)
+            }
+            0xE0..=0xEF => {
+                let code_point = ((first & 0x0F) as u32) << 12
+                    | ((bytes[index + 1] & 0x3F) as u32) << 6
+                    | (bytes[index + 2] & 0x3F) as u32;
+                (code_point, 3)
+            }
+            _ => {
+                let code_point = ((first & 0x07) as u32) << 18
+                    | ((bytes[index + 1] & 0x3F) as u32) << 12
+                    | ((bytes[index + 2] & 0x3F) as u32) << 6
+                    | (bytes[index + 3] & 0x3F) as u32;
+                (code_point, 4)
+            }
         };
         assert!(
             !(code_point <= 0x1F || code_point == 0x7F),

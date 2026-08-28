@@ -93,6 +93,7 @@ impl TenantColumn {
             Ok(()) => {}
             Err(error) => return Err(error),
         }
+
         match validate_tenant_identifier(column, TenantIdentifierPart::Column) {
             Ok(()) => {}
             Err(error) => return Err(error),
@@ -130,9 +131,11 @@ const fn validate_tenant_identifier(
             max: MAX_TENANT_IDENTIFIER_BYTES,
         });
     }
+
     if !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
         return Err(TenantColumnError::InvalidCharacters { part, value });
     }
+
     let mut index = 1;
     while index < bytes.len() {
         if !(bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_') {
@@ -140,9 +143,11 @@ const fn validate_tenant_identifier(
         }
         index += 1;
     }
+
     if is_reserved_tenant_identifier(value) {
         return Err(TenantColumnError::InvalidCharacters { part, value });
     }
+
     Ok(())
 }
 
@@ -177,6 +182,7 @@ const fn matches_ascii_case_insensitive(value: &str, candidates: &[&str]) -> boo
                 }
                 index += 1;
             }
+
             if matches {
                 return true;
             }

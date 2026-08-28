@@ -242,12 +242,14 @@ impl ApplicationVerifiedTenantBinding {
                 now,
             });
         }
+
         if now < self.valid_from {
             return Err(TenantBindingError::NotYetValid {
                 valid_from: self.valid_from,
                 now,
             });
         }
+
         if now >= self.valid_until {
             return Err(TenantBindingError::Stale {
                 valid_until: self.valid_until,

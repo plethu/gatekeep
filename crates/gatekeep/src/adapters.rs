@@ -366,6 +366,7 @@ impl<F> FactResolution<F> {
                 received_at,
             });
         }
+
         if let Some(fresh_until) = self
             .metadata
             .as_ref()
@@ -863,6 +864,7 @@ impl AuditEntry {
         if binding.tenant() != &self.tenant {
             return Err(AuditEntryError::BindingTenantMismatch);
         }
+
         if self.fact_resolution.is_none() {
             return Err(AuditEntryError::MissingFactResolution);
         }
