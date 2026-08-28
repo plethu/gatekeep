@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.1] - 2026-08-28
+
+Patch release for the 2.0 durable-audit integration and documentation.
+
+### Documentation
+
+- Corrected every durable-audit setup example to construct
+  `gatekeep_axum::Gatekeeper` with an application-owned `FactResolver` and a
+  Dovecote-backed `PgDovecoteAudit`.
+- Added a compile-checked Axum setup example so the documented composition is
+  exercised by the workspace build.
+
+### `gatekeep-axum`
+
+- Documented that the default occurrence clock is internal to the adapter.
+  Callers needing retry-stable time continue to supply a
+  `DecisionAuditOccurrence` in `Context`.
+
+### Packaging
+
+- Bumped all publishable workspace crates to 2.0.1 and raised the sibling
+  Dovecote and Keepsake caret requirements to 0.1.1 and 2.1.0.
+
 ## [2.0.0] - 2026-08-27
 
 Gatekeep 2.0 is a breaking release. Durable SQL decision audit now uses
@@ -16,8 +39,8 @@ Dovecote as its sole maintained event and delivery model.
 ### `gatekeep-axum`
 
 - Captures occurrence time once after evaluation at the authorization boundary.
-- Added a closure-based clock seam for deterministic tests; no public clock
-  trait is required.
+- The default occurrence clock is internal to the adapter; callers can supply a
+  `DecisionAuditOccurrence` in `Context` when retry stability is required.
 
 ### `gatekeep-sqlx`
 
@@ -166,6 +189,7 @@ Initial release of all five crates.
 - `SubjectMapper` trait with `PrincipalSubjectMapper` and `TenantScopedSubjectMapper` built in
 - `in-memory` feature flag for test-time `InMemoryActiveRelations` seeds
 
+[2.0.1]: https://github.com/plethu/gatekeep/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/plethu/gatekeep/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/plethu/gatekeep/compare/v1.0.1...v1.1.0
 

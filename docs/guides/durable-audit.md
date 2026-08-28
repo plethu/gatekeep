@@ -13,14 +13,11 @@ Enable the SQLx backend feature and run the matching migration:
 gatekeep-sqlx = { version = "2.0", features = ["postgres"] }
 ```
 
-```rust
-use gatekeep_axum::Gatekeeper;
-use gatekeep_sqlx::PgDovecoteAudit;
-
-let audit = PgDovecoteAudit::new(pool.clone(), "https://auth.example.test/gatekeep")?;
-audit.check_schema().await?;
-let gatekeeper = Gatekeeper::new(policy).with_audit_sink(audit);
-```
+The compile-checked [`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs)
+example is the canonical setup: it imports `gatekeep_axum::Gatekeeper`, uses an
+application-owned `FactResolver`, checks the Dovecote schema, and attaches
+`PgDovecoteAudit` with `Gatekeeper::new(resolver).with_audit_sink(audit)`. The
+workspace builds this example as part of its checks.
 
 The sink implements `gatekeep::AuditSink`. For an existing application
 transaction, call the backend-specific

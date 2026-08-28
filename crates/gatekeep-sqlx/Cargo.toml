@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-sqlx"
-version = "2.0.0"
+version = "2.0.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -24,7 +24,7 @@ mysql-tests = ["mysql", "sqlx/runtime-tokio"]
 
 [dependencies]
 async-trait.workspace = true
-gatekeep = { path = "../gatekeep", version = "2.0.0" }
+gatekeep = { path = "../gatekeep", version = "2.0.1" }
 dovecote = { workspace = true, optional = true }
 dovecote-sqlx-mysql = { workspace = true, optional = true }
 dovecote-sqlx-postgres = { workspace = true, optional = true }

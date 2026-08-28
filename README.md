@@ -106,14 +106,11 @@ returning permit or deny. Each decision becomes one complete JSON event and one
 pending Dovecote delivery; Gatekeep does not maintain a parallel audit table or
 outbox.
 
-```rust
-use gatekeep::Gatekeeper;
-use gatekeep_sqlx::PgDovecoteAudit;
-
-let audit = PgDovecoteAudit::new(pg_pool.clone(), "https://auth.example.test/gatekeep")?;
-audit.check_schema().await?;
-let gatekeeper = Gatekeeper::new(policy).with_audit_sink(audit);
-```
+The compile-checked [`axum-durable-audit`](examples/axum-durable-audit/src/main.rs)
+example imports `gatekeep_axum::Gatekeeper`, obtains a real application-owned
+`FactResolver`, checks the Dovecote schema, and constructs
+`Gatekeeper::new(resolver).with_audit_sink(PgDovecoteAudit)`. Use that example as
+the canonical setup when wiring a service.
 
 Use Dovecote's matching migration under its `migrations/` directory. Export
 workers claim and page Dovecote deliveries; Gatekeep's typed `AuditEntry` is the

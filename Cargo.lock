@@ -449,7 +449,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dovecote"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "mime",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-mysql"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-postgres"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -484,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "dovecote-sqlx-sqlite"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dovecote",
  "getrandom 0.4.3",
@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "blake3",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-axum"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -766,6 +766,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatekeep-example-axum-durable-audit"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "gatekeep",
+ "gatekeep-axum",
+ "gatekeep-sqlx",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "gatekeep-example-axum-keepsake-authorized-list"
 version = "0.1.0"
 dependencies = [
@@ -784,7 +796,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-fluent"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "fluent-bundle",
  "gatekeep",
@@ -795,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-keepsake"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -807,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-sqlx"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "dovecote",
@@ -1178,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "keepsake"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chrono",
  "serde",
