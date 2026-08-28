@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: plethu/dovecote
-          ref: aec64deb018fd0820697457c3077ff0c76e2f0ef
+          ref: cc079c73d01eb07602344d7da0dcd2019b01bc7c
           path: .ci/dovecote
 
       - name: Expose Dovecote at the local path used by Cargo
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: plethu/keepsake
-          ref: ed74b843307df2962ec7233e3fd5085c58261f22
+          ref: 392a6e6d8297c5e1ee13260efb69652351b3fdd7
           path: .ci/keepsake
 
       - name: Expose Keepsake at the local path used by Cargo
