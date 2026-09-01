@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here.
 
+## [4.0.0] - 2026-09-01
+
+Gatekeep 4.0 is a coordinated breaking release for the public audit API and
+durable event contract.
+
+### `gatekeep`
+
+- Made `AuditEntry` a current-only type with private fields, validated
+  constructors, and accessors. Current construction requires a validated
+  `DecisionAuditOccurrence`, tenant binding, and fact-resolution evidence.
+- Made `DecisionAuditOccurrence` opaque and validating on deserialization so
+  callers cannot bypass its identity, range, UTC, or microsecond invariants.
+- Validated and canonicalized occurrences while decoding current audit JSON;
+  unsupported portable times and reserved legacy identities fail closed.
+- Added explicit `AUDIT_ENTRY_SCHEMA_VERSION` payloads and
+  `policy_hash_version` fields to current policy anchors.
+- Added `LegacyAuditEntry` and `LegacyPolicyAnchor` for explicit migration
+  decoding and import; legacy records cannot be silently treated as current.
+
+### `gatekeep-sqlx`
+
+- Added `decode_legacy_decision_audit` for separately reviewed historical
+  imports. `decode_decision_audit` accepts only the current versioned shape.
+- Kept the historical v1 SQL migration artifacts byte-identical.
+
+### `gatekeep-keepsake`
+
+- Updated the relation bridge to the published Keepsake 4 identity and time
+  contracts.
+
+### Migration
+
+Update all five Gatekeep crates together. Decode 3.x events with the explicit
+legacy decoder, establish the tenant and policy-hash mapping, and use
+`LegacyAuditEntry::into_current` with a new validated occurrence before
+emitting 4.0 events. Do not apply the historical Gatekeep SQL migrations to a
+clean installation.
+
 ## [3.0.1] - 2026-09-01
 
 ### Correctness

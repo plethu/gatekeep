@@ -12,7 +12,9 @@ use gatekeep::{
     ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding, TenantId, Trace,
     TraceClause, TrustedServiceBinding,
 };
-use gatekeep_sqlx::{DecisionAuditConfig, SqliteDovecoteAudit, decode_decision_audit};
+use gatekeep_sqlx::{
+    DecisionAuditConfig, SqliteDovecoteAudit, decode_decision_audit, decode_legacy_decision_audit,
+};
 use sqlx::{SqlitePool, raw_sql, sqlite::SqlitePoolOptions};
 use time::OffsetDateTime;
 
@@ -60,7 +62,7 @@ async fn identical_audit_identity_is_independent_per_tenant() -> Result<(), Test
     let entry_a = audit_entry_for_tenant("tenant-1")?;
     let entry_b = audit_entry_for_tenant("tenant-2")?;
 
-    assert_eq!(entry_a.decision_audit_id, entry_b.decision_audit_id);
+    assert_eq!(entry_a.decision_audit_id(), entry_b.decision_audit_id());
     sink.record_decision_audit(&entry_a).await?;
     sink.record_decision_audit(&entry_b).await?;
 
@@ -138,8 +140,9 @@ async fn changed_payload_with_the_same_identity_is_a_typed_conflict() -> Result<
     let entry = audit_entry()?;
     sink.record_decision_audit(&entry).await?;
 
-    let mut changed = entry;
-    changed.request_id = Some(RequestId::new("request-2")?);
+    let mut changed = serde_json::to_value(&entry)?;
+    changed["request_id"] = serde_json::Value::String("request-2".to_owned());
+    let changed: AuditEntry = serde_json::from_value(changed)?;
     let Err(error) = sink.record_decision_audit(&changed).await else {
         return Err(TestError::ExpectedConflict);
     };
@@ -173,7 +176,7 @@ fn typed_history_projection_decodes_live_or_snapshot_event_shape() -> Result<(),
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&entry)?)?)
     .build()?
@@ -207,7 +210,7 @@ fn current_decoder_rejects_reserved_legacy_identity_without_widening_new_ids()
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&payload)?)?)
     .build()?
@@ -232,6 +235,56 @@ fn current_decoder_rejects_reserved_legacy_identity_without_widening_new_ids()
 }
 
 #[test]
+fn legacy_decoder_is_explicit_and_does_not_return_a_current_entry() -> Result<(), TestError> {
+    let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
+    let entry = audit_entry()?;
+    let mut payload = serde_json::to_value(&entry)?;
+    payload["decision_audit_id"] = serde_json::Value::String("legacy-outbox-42".to_owned());
+    payload
+        .as_object_mut()
+        .ok_or(TestError::ExpectedObject)?
+        .remove("schema_version");
+    payload["anchor"]
+        .as_object_mut()
+        .ok_or(TestError::ExpectedObject)?
+        .remove("policy_hash_version");
+    payload["binding"] = serde_json::Value::Null;
+    payload["fact_resolution"] = serde_json::Value::Null;
+    let event = NewEvent::builder(
+        StreamName::new("gatekeep-audit")?,
+        EventId::new("gatekeep-audit-legacy-outbox-42")?,
+        EventSource::new("https://audit.example.test/gatekeep")?,
+        EventType::new("gatekeep.decision_audit_recorded")?,
+    )
+    .time(entry.occurred_at())
+    .datacontenttype(ContentType::new("application/json")?)
+    .data(EventData::json(serde_json::to_vec(&payload)?)?)
+    .build()?
+    .into_stored()?;
+    let page = dovecote::PagedEvent::new(
+        dovecote::TenantId::new("tenant-1")?,
+        dovecote::RowId::new(1)?,
+        event,
+        OffsetDateTime::UNIX_EPOCH,
+        dovecote::DeliverySnapshot::pending(
+            OffsetDateTime::UNIX_EPOCH,
+            dovecote::AttemptCount::new(0)?,
+            None,
+        )?,
+    )?;
+
+    assert!(matches!(
+        decode_decision_audit(&config, &page),
+        Err(gatekeep_sqlx::DecisionAuditDecodeError::Json(_))
+    ));
+    let legacy = decode_legacy_decision_audit(&config, &page)?;
+    assert_eq!(legacy.decision_audit_id, "legacy-outbox-42");
+    assert!(legacy.binding.is_none());
+    assert!(legacy.fact_resolution.is_none());
+    Ok(())
+}
+
+#[test]
 fn current_decoder_rejects_missing_binding_even_with_a_tenant_row() -> Result<(), TestError> {
     let config = DecisionAuditConfig::new("https://audit.example.test/gatekeep")?;
     let entry = audit_entry()?;
@@ -243,7 +296,7 @@ fn current_decoder_rejects_missing_binding_even_with_a_tenant_row() -> Result<()
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&payload)?)?)
     .build()?
@@ -261,9 +314,7 @@ fn current_decoder_rejects_missing_binding_even_with_a_tenant_row() -> Result<()
     )?;
     assert!(matches!(
         decode_decision_audit(&config, &page),
-        Err(gatekeep_sqlx::DecisionAuditDecodeError::Entry(
-            gatekeep::AuditEntryError::MissingBinding
-        ))
+        Err(gatekeep_sqlx::DecisionAuditDecodeError::Json(_))
     ));
     Ok(())
 }
@@ -278,7 +329,7 @@ fn tenant_aware_decoder_rejects_payload_row_tenant_mismatch() -> Result<(), Test
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&entry)?)?)
     .build()?
@@ -341,49 +392,55 @@ fn audit_entry_for_tenant(tenant_name: &str) -> Result<AuditEntry, GatekeepError
         reason: Some(reason.code.clone()),
         shape: DenyShape::Forbidden,
     };
-    Ok(AuditEntry {
-        decision_audit_id: DecisionAuditId::new("decision-1")?,
-        occurred_at: OffsetDateTime::UNIX_EPOCH,
-        request_id: Some(RequestId::new("request-1")?),
-        anchor: PolicyAnchor {
-            policy_id: PolicyId::new("case-read")?,
-            policy_hash: PolicyHash::new("hash")?,
-        },
-        effect: EffectKind::Deny,
-        obligations: Vec::new(),
-        consulted: vec![(missing.clone(), Presence::Absent)],
-        decisive: decisive.clone(),
-        denial_reason: Some(reason),
-        trace: Trace {
-            consulted: vec![(missing, Presence::Absent)],
-            decisive,
-        },
-        binding: Some(TenantBinding::TrustedService(
-            TrustedServiceBinding::new(tenant.clone(), "gatekeep-sqlx-tests").map_err(|_| {
-                GatekeepError::InvalidPolicyRecord {
-                    reason: "test binding construction",
-                }
-            })?,
-        )),
-        fact_resolution: Some(
-            FactResolutionEvidence::from_resolution(
-                &FactResolution::new(
-                    gatekeep::KnownFacts::new(),
-                    None,
-                    OffsetDateTime::UNIX_EPOCH,
-                )
-                .map_err(|_| GatekeepError::InvalidPolicyRecord {
-                    reason: "test fact resolution freshness",
-                })?,
-            )
-            .map_err(|_| GatekeepError::InvalidPolicyRecord {
-                reason: "test fact evidence serialization",
-            })?,
-        ),
+    let trace = Trace {
+        consulted: vec![(missing, Presence::Absent)],
+        decisive,
+    };
+    let binding = TenantBinding::TrustedService(
+        TrustedServiceBinding::new(tenant.clone(), "gatekeep-sqlx-tests").map_err(|_| {
+            GatekeepError::InvalidPolicyRecord {
+                reason: "test binding construction",
+            }
+        })?,
+    );
+    let fact_resolution = FactResolutionEvidence::from_resolution(
+        &FactResolution::new(
+            gatekeep::KnownFacts::new(),
+            None,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .map_err(|_| GatekeepError::InvalidPolicyRecord {
+            reason: "test fact resolution freshness",
+        })?,
+    )
+    .map_err(|_| GatekeepError::InvalidPolicyRecord {
+        reason: "test fact evidence serialization",
+    })?;
+    AuditEntry::new(
+        gatekeep::DecisionAuditOccurrence::new(
+            DecisionAuditId::new("decision-1")?,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .map_err(|_| GatekeepError::InvalidPolicyRecord {
+            reason: "test decision occurrence",
+        })?,
+        Some(RequestId::new("request-1")?),
+        PolicyAnchor::new(PolicyId::new("case-read")?, PolicyHash::new("hash")?),
+        EffectKind::Deny,
+        Vec::new(),
+        trace.consulted.clone(),
+        trace.decisive.clone(),
+        Some(reason),
+        trace,
+        binding,
+        fact_resolution,
         tenant,
-        principal: SubjectRef::new("user", "mari")?,
-        subjects: BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),
-        locale: gatekeep::Locale::new("en-US")?,
+        SubjectRef::new("user", "mari")?,
+        BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),
+        gatekeep::Locale::new("en-US")?,
+    )
+    .map_err(|_| GatekeepError::InvalidPolicyRecord {
+        reason: "test audit entry",
     })
 }
 
@@ -409,6 +466,10 @@ enum TestError {
     DovecotePage(#[from] dovecote_sqlx_sqlite::PageError),
     #[error(transparent)]
     Decode(#[from] gatekeep_sqlx::DecisionAuditDecodeError),
+    #[error(transparent)]
+    LegacyDecode(#[from] gatekeep_sqlx::LegacyDecisionAuditDecodeError),
     #[error("changed content unexpectedly succeeded")]
     ExpectedConflict,
+    #[error("expected a JSON object")]
+    ExpectedObject,
 }

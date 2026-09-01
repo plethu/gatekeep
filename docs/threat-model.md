@@ -1,6 +1,6 @@
 # Threat model
 
-This is an engineering aid for Gatekeep 3.0, not a security audit or a
+This is an engineering aid for Gatekeep 4.0, not a security audit or a
 regulatory-compliance claim.
 
 ## Assets

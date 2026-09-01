@@ -49,7 +49,7 @@ state from [Keepsake](https://github.com/plethu/keepsake).
 ## Install
 
 ```sh
-cargo add gatekeep@3
+cargo add gatekeep@4
 ```
 
 Add only the adapters you need:

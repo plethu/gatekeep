@@ -27,48 +27,55 @@ pub fn audit_entry() -> Result<AuditEntry, GatekeepError> {
         reason: Some(reason.code.clone()),
         shape: DenyShape::Forbidden,
     };
-    Ok(AuditEntry {
-        decision_audit_id: gatekeep::DecisionAuditId::new("decision-1")?,
-        occurred_at: OffsetDateTime::UNIX_EPOCH,
-        request_id: Some(RequestId::new("request-1")?),
-        anchor: PolicyAnchor {
-            policy_id: PolicyId::new("case-read")?,
-            policy_hash: PolicyHash::new("hash")?,
-        },
-        effect: EffectKind::Deny,
-        obligations: Vec::new(),
-        consulted: vec![(missing.clone(), Presence::Absent)],
-        decisive: decisive.clone(),
-        denial_reason: Some(reason),
-        trace: Trace {
-            consulted: vec![(missing, Presence::Absent)],
-            decisive,
-        },
-        binding: Some(TenantBinding::TrustedService(
-            TrustedServiceBinding::new(TenantId::new("tenant-1")?, "gatekeep-sqlx-tests").map_err(
-                |_| GatekeepError::InvalidPolicyRecord {
-                    reason: "test binding construction",
-                },
-            )?,
-        )),
-        fact_resolution: Some(
-            FactResolutionEvidence::from_resolution(
-                &FactResolution::new(
-                    gatekeep::KnownFacts::new(),
-                    None,
-                    OffsetDateTime::UNIX_EPOCH,
-                )
-                .map_err(|_| GatekeepError::InvalidPolicyRecord {
-                    reason: "test fact resolution freshness",
-                })?,
-            )
-            .map_err(|_| GatekeepError::InvalidPolicyRecord {
-                reason: "test fact evidence serialization",
-            })?,
-        ),
-        tenant: TenantId::new("tenant-1")?,
-        principal: SubjectRef::new("user", "mari")?,
-        subjects: BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),
-        locale: gatekeep::Locale::new("en-US")?,
+    let tenant = TenantId::new("tenant-1")?;
+    let trace = Trace {
+        consulted: vec![(missing, Presence::Absent)],
+        decisive,
+    };
+    let binding = TenantBinding::TrustedService(
+        TrustedServiceBinding::new(tenant.clone(), "gatekeep-sqlx-tests").map_err(|_| {
+            GatekeepError::InvalidPolicyRecord {
+                reason: "test binding construction",
+            }
+        })?,
+    );
+    let fact_resolution = FactResolutionEvidence::from_resolution(
+        &FactResolution::new(
+            gatekeep::KnownFacts::new(),
+            None,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .map_err(|_| GatekeepError::InvalidPolicyRecord {
+            reason: "test fact resolution freshness",
+        })?,
+    )
+    .map_err(|_| GatekeepError::InvalidPolicyRecord {
+        reason: "test fact evidence serialization",
+    })?;
+    AuditEntry::new(
+        gatekeep::DecisionAuditOccurrence::new(
+            gatekeep::DecisionAuditId::new("decision-1")?,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .map_err(|_| GatekeepError::InvalidPolicyRecord {
+            reason: "test decision occurrence",
+        })?,
+        Some(RequestId::new("request-1")?),
+        PolicyAnchor::new(PolicyId::new("case-read")?, PolicyHash::new("hash")?),
+        EffectKind::Deny,
+        Vec::new(),
+        trace.consulted.clone(),
+        trace.decisive.clone(),
+        Some(reason),
+        trace,
+        binding,
+        fact_resolution,
+        tenant,
+        SubjectRef::new("user", "mari")?,
+        BTreeMap::from([(SubjectSlot::new("case")?, SubjectRef::new("case", "123")?)]),
+        gatekeep::Locale::new("en-US")?,
+    )
+    .map_err(|_| GatekeepError::InvalidPolicyRecord {
+        reason: "test audit entry",
     })
 }

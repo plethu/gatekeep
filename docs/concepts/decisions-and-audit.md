@@ -63,10 +63,18 @@ belongs in a reason catalog such as `gatekeep-fluent`, not in the policy value.
   metadata is absent.
 
 Build current entries with the typed constructor. It requires a validated
-binding whose tenant matches the entry tenant. The optional binding and
-evidence fields exist only for serde compatibility with pre-3.0 bytes. The
-current [Dovecote](https://github.com/plethu/dovecote) decoder requires a
-storage-row tenant, binding, and evidence; it rejects legacy-shaped payloads.
+`DecisionAuditOccurrence`, binding, and fact evidence, and current entries
+cannot represent the historical optional binding/evidence state. Every current
+payload carries `AUDIT_ENTRY_SCHEMA_VERSION`; its `PolicyAnchor` carries and
+validates `POLICY_HASH_FORMAT_VERSION`. Serde decoding routes the identity and
+timestamp through `DecisionAuditOccurrence`, so sub-microsecond timestamps are
+canonicalized and out-of-range or reserved legacy identities are rejected.
+
+`LegacyAuditEntry` and `LegacyPolicyAnchor` are migration-only representations.
+Use the explicitly named legacy SQLx decoder and map the result through
+`LegacyAuditEntry::into_current` with a caller-supplied current occurrence,
+binding, evidence, and known hash format. Legacy data is never silently
+deserialized as a current `AuditEntry`.
 
 `DecisionAuditId::new` reserves the exact, case-sensitive `legacy-` prefix for
 explicit migration identities. The current decoder does not import those

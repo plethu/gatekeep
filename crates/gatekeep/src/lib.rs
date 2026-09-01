@@ -22,11 +22,12 @@ pub mod condition;
 pub mod policy;
 
 pub use adapters::{
-    AuditEntry, AuditEntryError, AuditSink, Clock, Context, ContextError, DecisionSummary,
-    EffectKind, FactResolution, FactResolutionError, FactResolutionEvidence,
-    FactResolutionEvidenceError, FactResolutionMetadata, FactResolver, IdentityReasonCatalog,
-    LowerError, Lowered, NoopAuditSink, NoopPolicyObserver, PolicyAnchor, PolicyObserver,
-    QueryLowering, ReasonCatalog, ResolveError, SystemClock,
+    AUDIT_ENTRY_SCHEMA_VERSION, AuditEntry, AuditEntryError, AuditSink, Clock, Context,
+    ContextError, DecisionSummary, EffectKind, FactResolution, FactResolutionError,
+    FactResolutionEvidence, FactResolutionEvidenceError, FactResolutionMetadata, FactResolver,
+    IdentityReasonCatalog, LegacyAuditEntry, LegacyPolicyAnchor, LowerError, Lowered,
+    NoopAuditSink, NoopPolicyObserver, PolicyAnchor, PolicyObserver, QueryLowering, ReasonCatalog,
+    ResolveError, SystemClock,
 };
 #[cfg(any(test, feature = "test"))]
 pub use audit_memory::{InMemoryAuditError, InMemoryAuditSink};

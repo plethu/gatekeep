@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
 };
-use gatekeep::RequestId;
 use gatekeep_sqlx::{DecisionAuditConfig, PgDovecoteAudit, decode_decision_audit};
 use sqlx::{PgPool, postgres::PgPoolOptions, query_as, query_scalar, raw_sql};
 use time::OffsetDateTime;
@@ -59,7 +58,7 @@ async fn postgres_dovecote_audit_maps_replays_and_decodes_the_complete_event() -
     assert_eq!(row.1, "gatekeep-audit-decision-1");
     assert_eq!(row.2, "https://audit.example.test/gatekeep");
     assert_eq!(row.3, "gatekeep.decision_audit_recorded");
-    assert_eq!(row.4, Some(entry.occurred_at));
+    assert_eq!(row.4, Some(entry.occurred_at()));
     assert_eq!(row.5, "application/json");
     assert_eq!(row.6, "json");
     assert_eq!(row.7, serde_json::to_vec(&entry)?);
@@ -120,8 +119,9 @@ async fn postgres_dovecote_audit_rejects_changed_immutable_content() -> TestResu
     let entry = audit_support::audit_entry()?;
     sink.record_decision_audit(&entry).await?;
 
-    let mut changed = entry;
-    changed.request_id = Some(RequestId::new("request-2")?);
+    let mut changed = serde_json::to_value(&entry)?;
+    changed["request_id"] = serde_json::Value::String("request-2".to_owned());
+    let changed: gatekeep::AuditEntry = serde_json::from_value(changed)?;
     let Err(error) = sink.record_decision_audit(&changed).await else {
         return Err("changed content unexpectedly succeeded".into());
     };
@@ -152,7 +152,7 @@ fn postgres_current_decoder_rejects_reserved_legacy_identity() -> TestResult<()>
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&payload)?)?)
     .build()?

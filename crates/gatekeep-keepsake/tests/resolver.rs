@@ -72,11 +72,11 @@ async fn gatekeeper_uses_application_clock_for_keepsake_observation() -> TestRes
     let entries = audit.entries()?;
     let evidence = entries
         .first()
-        .and_then(|entry| entry.fact_resolution.as_ref())
-        .ok_or("missing fact-resolution evidence")?;
+        .ok_or("missing audit entry")?
+        .fact_resolution();
     assert_eq!(evidence.observed_at(), now);
-    assert_eq!(entries[0].occurred_at, now);
-    assert_eq!(entries[0].effect, gatekeep::EffectKind::Permit);
+    assert_eq!(entries[0].occurred_at(), now);
+    assert_eq!(entries[0].effect(), gatekeep::EffectKind::Permit);
     Ok(())
 }
 
@@ -406,8 +406,7 @@ fn revoke_by_subject_preserves_target_subject_and_relation() -> TestResult<()> {
     let resolver = resolver_for(&principal)?.with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
     let cx = context("tenant_1", principal)?;
     let target = resolver.target_for_fact(&fact_id("paid_plan")?, &cx)?;
-    let at =
-        chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")?.with_timezone(&chrono::Utc);
+    let at = time::macros::datetime!(2026-01-01 0:00 UTC);
     let command_context = CommandContext::new(ActorRef::new("system", "test")?);
 
     let command = target.revoke_by_subject(at, command_context.clone());

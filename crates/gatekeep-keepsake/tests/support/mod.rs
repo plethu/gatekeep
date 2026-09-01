@@ -90,7 +90,7 @@ impl FakeSource {
             tenant_id,
             0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
             subject,
-            fixed_time()?,
+            fixed_time(),
         )?;
         Ok(self)
     }
@@ -105,7 +105,7 @@ impl FakeSource {
                 tenant_id,
                 0xbbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb_bbbb,
                 subject,
-                fixed_time()?,
+                fixed_time(),
             )?;
         Ok(self)
     }
@@ -252,9 +252,6 @@ pub fn tenant_subject(
     )
 }
 
-fn fixed_time() -> TestResult<keepsake::__private::DateTime<keepsake::__private::Utc>> {
-    Ok(
-        keepsake::__private::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")?
-            .with_timezone(&keepsake::__private::Utc),
-    )
+const fn fixed_time() -> time::OffsetDateTime {
+    time::macros::datetime!(2026-01-01 0:00 UTC)
 }

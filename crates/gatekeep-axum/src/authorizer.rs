@@ -177,13 +177,13 @@ where
             .map_err(GatekeepAxumError::Context)
             .map_err(GatekeepRejection::from_error)?;
 
-        let anchor = PolicyAnchor {
+        let anchor = PolicyAnchor::new(
             policy_id,
-            policy_hash: policy
+            policy
                 .hash()
                 .map_err(GatekeepAxumError::PolicyHash)
                 .map_err(GatekeepRejection::from_error)?,
-        };
+        );
 
         let required = required_facts(policy).into_iter().collect::<Vec<_>>();
         let resolution = self
@@ -253,13 +253,17 @@ where
         let occurrence = supplied_occurrence
             .map_or_else(
                 || DecisionAuditOccurrence::new(DecisionAuditId::generate(), self.clock.now_utc()),
-                |value| DecisionAuditOccurrence::new(value.decision_audit_id, value.occurred_at),
+                |value| {
+                    DecisionAuditOccurrence::new(
+                        value.decision_audit_id().clone(),
+                        value.occurred_at(),
+                    )
+                },
             )
             .map_err(GatekeepAxumError::Occurrence)?;
         let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
         let entry = AuditEntry::new(
-            occurrence.decision_audit_id.clone(),
-            occurrence.occurred_at,
+            occurrence.clone(),
             context.request_id().cloned(),
             anchor.clone(),
             EffectKind::from(decision),

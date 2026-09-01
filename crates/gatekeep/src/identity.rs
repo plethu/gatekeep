@@ -377,12 +377,12 @@ impl DecisionAuditId {
 /// Applications may construct and retain this value at their authorization
 /// orchestration boundary. Reusing it for an ambiguous retry keeps both the
 /// `CloudEvents` identity and the serialized occurrence time unchanged.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DecisionAuditOccurrence {
     /// Stable identity of the decision occurrence.
-    pub decision_audit_id: DecisionAuditId,
+    decision_audit_id: DecisionAuditId,
     /// Occurrence time normalized to UTC at exact microsecond precision.
-    pub occurred_at: OffsetDateTime,
+    occurred_at: OffsetDateTime,
 }
 
 impl DecisionAuditOccurrence {
@@ -426,6 +426,64 @@ impl DecisionAuditOccurrence {
             occurred_at: normalized.to_offset(UtcOffset::UTC),
         })
     }
+
+    /// Returns the stable identity of this decision occurrence.
+    #[must_use]
+    pub const fn decision_audit_id(&self) -> &DecisionAuditId {
+        &self.decision_audit_id
+    }
+
+    /// Returns the normalized UTC occurrence time.
+    #[must_use]
+    pub const fn occurred_at(&self) -> OffsetDateTime {
+        self.occurred_at
+    }
+
+    /// Revalidates that this value retains its constructor invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecisionAuditOccurrenceError`] for reserved identities,
+    /// out-of-range instants, non-UTC offsets, or sub-microsecond precision.
+    pub fn validate(&self) -> Result<(), DecisionAuditOccurrenceError> {
+        Self::new(self.decision_audit_id.clone(), self.occurred_at)?;
+        if self.occurred_at.offset() != UtcOffset::UTC
+            || !self.occurred_at.nanosecond().is_multiple_of(1_000)
+        {
+            return Err(DecisionAuditOccurrenceError::NonCanonical);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn into_parts(self) -> (DecisionAuditId, OffsetDateTime) {
+        (self.decision_audit_id, self.occurred_at)
+    }
+
+    pub(crate) const fn from_validated_parts(
+        decision_audit_id: DecisionAuditId,
+        occurred_at: OffsetDateTime,
+    ) -> Self {
+        Self {
+            decision_audit_id,
+            occurred_at,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DecisionAuditOccurrence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            decision_audit_id: DecisionAuditId,
+            occurred_at: OffsetDateTime,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.decision_audit_id, wire.occurred_at).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Validation failure for a decision occurrence crossing the SQL audit
@@ -438,6 +496,9 @@ pub enum DecisionAuditOccurrenceError {
     /// The occurrence is outside Dovecote's portable instant range.
     #[error("decision occurrence is outside Dovecote's portable instant range")]
     OutOfRange,
+    /// The occurrence was not normalized through the validating constructor.
+    #[error("decision occurrence must use UTC at exact microsecond precision")]
+    NonCanonical,
 }
 
 static_id!(StaticFactId, FactId);

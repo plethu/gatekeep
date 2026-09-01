@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use gatekeep::{FactId, SubjectSlot};
 use keepsake::{CommandContext, RelationId, RevokeBySubject, SubjectRef};
+use time::OffsetDateTime;
 
 /// Resolved keepsake target for a gatekeep fact binding.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,7 +20,11 @@ pub struct KeepsakeRelationTarget {
 impl KeepsakeRelationTarget {
     /// Builds a keepsake revoke-by-subject command for this target.
     #[must_use]
-    pub fn revoke_by_subject(&self, at: DateTime<Utc>, context: CommandContext) -> RevokeBySubject {
+    pub fn revoke_by_subject(
+        &self,
+        at: OffsetDateTime,
+        context: CommandContext,
+    ) -> RevokeBySubject {
         RevokeBySubject::new(
             self.tenant_id.clone(),
             self.subject.clone(),

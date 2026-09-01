@@ -44,4 +44,4 @@ arbitrary business-state writes made elsewhere.
 
 Install Dovecote's migration for the enabled backend. The old Gatekeep
 migration files remain only for v1 upgrade and reconciliation and are not part
-of the 3.0 runtime schema.
+of the 4.0 runtime schema.

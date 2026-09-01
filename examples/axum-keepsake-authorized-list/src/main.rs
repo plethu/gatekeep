@@ -1,6 +1,5 @@
 //! Runnable axum example for authorized-list lowering with keepsake facts.
 
-use chrono::{DateTime, Utc};
 use gatekeep_example_authorized_list_support::{
     CaseOwner, SharedCase, Staff, request_context, router,
 };
@@ -30,7 +29,7 @@ fn resolver_with_staff() -> Result<Resolver, BuildError> {
         keepsake::TenantId::new(context.tenant().as_str())?,
         0xaaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa_aaaa,
         tenant_scoped_subject(&context)?,
-        fixed_time()?,
+        fixed_time(),
     )?;
     Ok(resolver_from_source(source)?)
 }
@@ -49,9 +48,8 @@ fn resolver_from_source(
         .with_deferred_relation::<CaseOwner, CaseOwnerRelation>()
 }
 
-fn fixed_time() -> Result<DateTime<Utc>, chrono::ParseError> {
-    DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
-        .map(|timestamp| timestamp.with_timezone(&Utc))
+const fn fixed_time() -> time::OffsetDateTime {
+    time::macros::datetime!(2026-01-01 0:00 UTC)
 }
 
 relation_spec! {
@@ -82,8 +80,6 @@ relation_spec! {
 enum BuildError {
     #[error(transparent)]
     Binding(#[from] gatekeep_keepsake::FactBindingError),
-    #[error(transparent)]
-    Chrono(#[from] chrono::ParseError),
     #[error(transparent)]
     Gatekeep(#[from] gatekeep::GatekeepError),
     #[error(transparent)]

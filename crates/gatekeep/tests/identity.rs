@@ -58,10 +58,10 @@ fn decision_occurrence_normalizes_utc_at_microsecond_precision()
     let occurrence = DecisionAuditOccurrence::new(id, at)?;
 
     assert_eq!(
-        occurrence.occurred_at,
+        occurrence.occurred_at(),
         time::OffsetDateTime::UNIX_EPOCH + time::Duration::microseconds(123)
     );
-    assert_eq!(occurrence.occurred_at.offset(), time::UtcOffset::UTC);
+    assert_eq!(occurrence.occurred_at().offset(), time::UtcOffset::UTC);
     Ok(())
 }
 
@@ -71,7 +71,7 @@ fn decision_occurrence_normalizes_submicroseconds_and_rejects_invalid_endpoints(
     let id = DecisionAuditId::new("decision-1")?;
     let submicrosecond = time::OffsetDateTime::from_unix_timestamp_nanos(1)?;
     let normalized = DecisionAuditOccurrence::new(id.clone(), submicrosecond)?;
-    assert_eq!(normalized.occurred_at, time::OffsetDateTime::UNIX_EPOCH);
+    assert_eq!(normalized.occurred_at(), time::OffsetDateTime::UNIX_EPOCH);
 
     let before_epoch = time::OffsetDateTime::UNIX_EPOCH - time::Duration::nanoseconds(1_000);
     assert_eq!(
@@ -88,6 +88,37 @@ fn decision_occurrence_normalizes_submicroseconds_and_rejects_invalid_endpoints(
         DecisionAuditOccurrence::new(id, after_max),
         Err(DecisionAuditOccurrenceError::OutOfRange)
     );
+    Ok(())
+}
+
+#[test]
+fn decision_occurrence_deserialization_reestablishes_constructor_invariants()
+-> Result<(), Box<dyn std::error::Error>> {
+    let submicrosecond = time::OffsetDateTime::UNIX_EPOCH + time::Duration::nanoseconds(1_234);
+    let normalized: DecisionAuditOccurrence = serde_json::from_value(serde_json::json!({
+        "decision_audit_id": "decision-serde",
+        "occurred_at": submicrosecond,
+    }))?;
+
+    assert_eq!(normalized.decision_audit_id().as_str(), "decision-serde");
+    assert_eq!(
+        normalized.occurred_at(),
+        time::OffsetDateTime::UNIX_EPOCH + time::Duration::nanoseconds(1_000)
+    );
+    assert!(normalized.validate().is_ok());
+
+    let before_epoch = time::OffsetDateTime::UNIX_EPOCH - time::Duration::seconds(1);
+    let out_of_range = serde_json::from_value::<DecisionAuditOccurrence>(serde_json::json!({
+        "decision_audit_id": "decision-before-epoch",
+        "occurred_at": before_epoch,
+    }));
+    assert!(out_of_range.is_err());
+
+    let legacy = serde_json::from_value::<DecisionAuditOccurrence>(serde_json::json!({
+        "decision_audit_id": "legacy-imported",
+        "occurred_at": time::OffsetDateTime::UNIX_EPOCH,
+    }));
+    assert!(legacy.is_err());
     Ok(())
 }
 

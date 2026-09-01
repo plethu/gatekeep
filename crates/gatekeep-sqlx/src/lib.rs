@@ -33,7 +33,8 @@ mod fragment;
 pub use audit::{
     DECISION_AUDIT_CONTENT_TYPE, DECISION_AUDIT_EVENT_TYPE, DEFAULT_AUDIT_STREAM,
     DecisionAuditConfig, DecisionAuditConfigError, DecisionAuditDecodeError,
-    DecisionAuditEventError, decode_decision_audit,
+    DecisionAuditEventError, LegacyDecisionAuditDecodeError, decode_decision_audit,
+    decode_legacy_decision_audit,
 };
 #[cfg(feature = "mysql")]
 pub use audit::{MySqlDovecoteAudit, MySqlDovecoteAuditError};

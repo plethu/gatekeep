@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
 };
-use gatekeep::RequestId;
 use gatekeep_sqlx::{DecisionAuditConfig, MySqlDovecoteAudit, decode_decision_audit};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions, query_as, query_scalar, raw_sql};
 use time::{OffsetDateTime, PrimitiveDateTime};
@@ -60,7 +59,7 @@ async fn mysql_dovecote_audit_maps_replays_and_decodes_the_complete_event() -> T
     );
     assert_eq!(
         row.occurred_at.map(PrimitiveDateTime::assume_utc),
-        Some(entry.occurred_at)
+        Some(entry.occurred_at())
     );
     assert_eq!(
         checked_text(row.datacontenttype, "content type")?,
@@ -123,8 +122,9 @@ async fn mysql_dovecote_audit_rejects_changed_immutable_content() -> TestResult<
     let entry = audit_support::audit_entry()?;
     sink.record_decision_audit(&entry).await?;
 
-    let mut changed = entry;
-    changed.request_id = Some(RequestId::new("request-2")?);
+    let mut changed = serde_json::to_value(&entry)?;
+    changed["request_id"] = serde_json::Value::String("request-2".to_owned());
+    let changed: gatekeep::AuditEntry = serde_json::from_value(changed)?;
     let Err(error) = sink.record_decision_audit(&changed).await else {
         return Err("changed content unexpectedly succeeded".into());
     };
@@ -155,7 +155,7 @@ fn mysql_current_decoder_rejects_reserved_legacy_identity() -> TestResult<()> {
         EventSource::new("https://audit.example.test/gatekeep")?,
         EventType::new("gatekeep.decision_audit_recorded")?,
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(ContentType::new("application/json")?)
     .data(EventData::json(serde_json::to_vec(&payload)?)?)
     .build()?

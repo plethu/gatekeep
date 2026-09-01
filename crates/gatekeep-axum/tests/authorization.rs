@@ -57,20 +57,17 @@ async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
     assert_eq!(authorized.outcome, Access::Full);
     let entries = audit.entries()?;
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].tenant, *context.tenant());
-    assert_eq!(entries[0].principal, *context.principal());
-    assert_eq!(entries[0].binding.as_ref(), Some(context.binding()));
+    assert_eq!(entries[0].tenant(), context.tenant());
+    assert_eq!(entries[0].principal(), context.principal());
+    assert_eq!(entries[0].binding(), context.binding());
     assert_eq!(
         entries[0]
-            .fact_resolution
-            .as_ref()
-            .and_then(|value| value.source().map(gatekeep::BindingProvenance::as_str)),
+            .fact_resolution()
+            .source()
+            .map(gatekeep::BindingProvenance::as_str),
         Some("test.static-resolver")
     );
-    let resolution = entries[0]
-        .fact_resolution
-        .as_ref()
-        .ok_or(TestError::MissingAuditOccurrence)?;
+    let resolution = entries[0].fact_resolution();
     let authenticated_at = match context.binding() {
         TenantBinding::ApplicationVerified(binding) => binding.evidence().authenticated_at(),
         TenantBinding::TrustedService(_) => unreachable!("test uses application binding"),
@@ -108,9 +105,9 @@ async fn audit_identity_and_occurrence_time_are_captured_once() -> Result<(), Te
         .await?;
 
     let entries = audit.entries()?;
-    assert_eq!(entries[0].decision_audit_id, decision_audit_id);
-    assert_eq!(entries[0].occurred_at, occurred_at);
-    assert_eq!(authorized.audit_occurrence.occurred_at, occurred_at);
+    assert_eq!(entries[0].decision_audit_id(), &decision_audit_id);
+    assert_eq!(entries[0].occurred_at(), occurred_at);
+    assert_eq!(authorized.audit_occurrence.occurred_at(), occurred_at);
     Ok(())
 }
 
@@ -125,10 +122,10 @@ async fn ordinary_clock_is_normalized_to_microseconds() -> Result<(), TestError>
     let after = OffsetDateTime::now_utc();
     let before_microsecond = before.replace_nanosecond(before.nanosecond() / 1_000 * 1_000)?;
 
-    assert!(authorized.audit_occurrence.occurred_at >= before_microsecond);
-    assert!(authorized.audit_occurrence.occurred_at <= after);
+    assert!(authorized.audit_occurrence.occurred_at() >= before_microsecond);
+    assert!(authorized.audit_occurrence.occurred_at() <= after);
     assert_eq!(
-        authorized.audit_occurrence.occurred_at.nanosecond() % 1_000,
+        authorized.audit_occurrence.occurred_at().nanosecond() % 1_000,
         0
     );
     Ok(())
@@ -173,29 +170,17 @@ async fn ambiguous_audit_failure_replays_identity_but_refreshes_observation_time
         .map_err(|_rejection| TestError::Authorization)?;
     let entries = audit.entries()?;
     assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].decision_audit_id, entries[1].decision_audit_id);
-    assert_eq!(entries[0].occurred_at, entries[1].occurred_at);
     assert_eq!(
-        entries[0]
-            .fact_resolution
-            .as_ref()
-            .map(gatekeep::FactResolutionEvidence::fact_set_digest),
-        entries[1]
-            .fact_resolution
-            .as_ref()
-            .map(gatekeep::FactResolutionEvidence::fact_set_digest)
+        entries[0].decision_audit_id(),
+        entries[1].decision_audit_id()
+    );
+    assert_eq!(entries[0].occurred_at(), entries[1].occurred_at());
+    assert_eq!(
+        entries[0].fact_resolution().fact_set_digest(),
+        entries[1].fact_resolution().fact_set_digest()
     );
     assert!(
-        entries[1]
-            .fact_resolution
-            .as_ref()
-            .ok_or(TestError::MissingAuditOccurrence)?
-            .observed_at()
-            >= entries[0]
-                .fact_resolution
-                .as_ref()
-                .ok_or(TestError::MissingAuditOccurrence)?
-                .observed_at()
+        entries[1].fact_resolution().observed_at() >= entries[0].fact_resolution().observed_at()
     );
     assert_eq!(authorized.audit_occurrence, occurrence);
     Ok(())

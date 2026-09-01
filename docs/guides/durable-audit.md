@@ -10,7 +10,7 @@ Enable the SQLx backend feature and run the matching migration:
 
 ```toml
 [dependencies]
-gatekeep-sqlx = { version = "3.0", features = ["postgres"] }
+gatekeep-sqlx = { version = "4.0", features = ["postgres"] }
 ```
 
 The compile-checked
@@ -39,9 +39,12 @@ The Dovecote schema stores:
 
 Use Dovecote live or snapshot paging for history and decode each complete
 `PagedEvent` with `gatekeep_sqlx::decode_decision_audit`; the decoder checks the
-storage-row tenant against the payload tenant and validates current binding and
-fact evidence before returning `AuditEntry`. It does not silently import
-legacy-shaped payloads; use an explicit versioned migration importer for those.
+storage-row tenant against the payload tenant and validates current schema,
+policy-hash version, portable occurrence, binding, and fact evidence before
+returning `AuditEntry`. Missing or unknown schema/hash versions are rejected.
+It does not silently import legacy-shaped payloads. Use
+`gatekeep_sqlx::decode_legacy_decision_audit` and
+`LegacyAuditEntry::into_current` from an explicit migration importer instead.
 Do not add Gatekeep-owned child tables or a second outbox.
 
 ## Failure Handling
@@ -55,7 +58,7 @@ explicitly out of scope. The production constructor requires an audit sink.
 
 ## Installation and migration
 
-For a new 3.0 installation, install the application's domain schema and the
+For a new 4.0 installation, install the application's domain schema and the
 selected Dovecote schema, call `check_schema`, configure the source, and use
 the ordinary sink. No Gatekeep audit migration is required.
 

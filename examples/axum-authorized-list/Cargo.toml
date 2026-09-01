@@ -11,9 +11,9 @@ description = "Runnable axum authorized-list example for gatekeep"
 [dependencies]
 async-trait.workspace = true
 axum = { workspace = true, features = ["http1"] }
-gatekeep = { path = "../../crates/gatekeep", version = "3.0.1" }
+gatekeep = { path = "../../crates/gatekeep", version = "4.0.0" }
 gatekeep-example-authorized-list-support = { path = "../authorized-list-support", version = "0.1.0" }
-gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "3.0.1" }
+gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "4.0.0" }
 serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true

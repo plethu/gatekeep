@@ -6,7 +6,7 @@
 //! shape. It deliberately contains no Gatekeep-owned audit tables or paging
 //! model.
 
-use gatekeep::{AuditEntry, AuditEntryError, DecisionAuditId, GatekeepError};
+use gatekeep::{AuditEntry, AuditEntryError, DecisionAuditId, GatekeepError, LegacyAuditEntry};
 use serde_json::Error as JsonError;
 use thiserror::Error;
 use url::Url;
@@ -180,6 +180,30 @@ pub enum DecisionAuditDecodeError {
     Identity(#[source] GatekeepError),
 }
 
+/// Errors returned while decoding a historical audit event explicitly.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum LegacyDecisionAuditDecodeError {
+    /// A required Dovecote event attribute did not match Gatekeep's contract.
+    #[error("unexpected Gatekeep legacy decision audit event {field}")]
+    UnexpectedShape {
+        /// Attribute that did not match.
+        field: &'static str,
+    },
+    /// The event did not carry JSON data.
+    #[error("legacy decision audit event has no JSON payload")]
+    MissingPayload,
+    /// The event payload was not a valid historical typed entry.
+    #[error("decode legacy decision audit payload")]
+    Json(#[source] JsonError),
+    /// The event identity did not match the historical payload identity.
+    #[error("legacy decision audit identity does not match the event")]
+    Identity,
+    /// The storage tenant differs from the historical payload tenant.
+    #[error("legacy decision audit tenant does not match the storage row")]
+    Tenant,
+}
+
 /// Decodes a tenant-scoped Dovecote page item into a typed Gatekeep audit
 /// entry.
 ///
@@ -196,13 +220,58 @@ pub fn decode_decision_audit(
     paged: &dovecote::PagedEvent,
 ) -> Result<AuditEntry, DecisionAuditDecodeError> {
     let entry = decode_event(config, paged.event())?;
-    if paged.tenant_id().as_str() != entry.tenant.as_str() {
+    if paged.tenant_id().as_str() != entry.tenant().as_str() {
         return Err(DecisionAuditDecodeError::UnexpectedShape { field: "tenant" });
     }
-    // The current decoder never returns a pre-3.0 representation. Historical
+    // The current decoder never returns a pre-4.0 representation. Historical
     // records must be migrated through an explicit, separately versioned
     // importer that can prove their shape and provenance.
     entry.validate_current()?;
+    Ok(entry)
+}
+
+/// Decodes a historical Gatekeep audit event without treating it as current.
+///
+/// The returned [`LegacyAuditEntry`] retains the pre-4.0 optional fields and
+/// must be explicitly mapped by migration code before it can reach an
+/// [`gatekeep::AuditSink`].
+///
+/// # Errors
+///
+/// Returns [`LegacyDecisionAuditDecodeError`] when event attributes, payload
+/// identity, or tenant routing do not match the historical contract.
+pub fn decode_legacy_decision_audit(
+    config: &DecisionAuditConfig,
+    paged: &dovecote::PagedEvent,
+) -> Result<LegacyAuditEntry, LegacyDecisionAuditDecodeError> {
+    let event = paged.event();
+    if event.stream() != config.stream()
+        || event.source() != config.source()
+        || event.event_type() != config.event_type()
+        || event.datacontenttype().map(dovecote::ContentType::as_str)
+            != Some(DECISION_AUDIT_CONTENT_TYPE)
+    {
+        return Err(LegacyDecisionAuditDecodeError::UnexpectedShape {
+            field: "attributes",
+        });
+    }
+
+    let Some(dovecote::EventData::Json(payload)) = event.data() else {
+        return Err(LegacyDecisionAuditDecodeError::MissingPayload);
+    };
+
+    let entry: LegacyAuditEntry =
+        serde_json::from_slice(payload.as_bytes()).map_err(LegacyDecisionAuditDecodeError::Json)?;
+    if event.id().as_str() != format!("gatekeep-audit-{}", entry.decision_audit_id)
+        || event.time() != Some(entry.occurred_at)
+    {
+        return Err(LegacyDecisionAuditDecodeError::Identity);
+    }
+
+    if paged.tenant_id().as_str() != entry.tenant.as_str() {
+        return Err(LegacyDecisionAuditDecodeError::Tenant);
+    }
+
     Ok(entry)
 }
 
@@ -226,8 +295,8 @@ fn decode_event(
     };
 
     let entry = decode_payload(payload.as_bytes())?;
-    let expected_id = format!("gatekeep-audit-{}", entry.decision_audit_id.as_str());
-    if event.id().as_str() != expected_id || event.time() != Some(entry.occurred_at) {
+    let expected_id = format!("gatekeep-audit-{}", entry.decision_audit_id().as_str());
+    if event.id().as_str() != expected_id || event.time() != Some(entry.occurred_at()) {
         return Err(DecisionAuditDecodeError::UnexpectedShape {
             field: "identity or occurrence time",
         });
@@ -235,7 +304,7 @@ fn decode_event(
     // Deserialization already validates this field. Reconstructing it here
     // makes the identity boundary explicit and keeps this check future-proof
     // if AuditEntry's representation ever becomes more permissive.
-    DecisionAuditId::new(entry.decision_audit_id.as_str().to_owned())
+    DecisionAuditId::new(entry.decision_audit_id().as_str().to_owned())
         .map_err(DecisionAuditDecodeError::Identity)?;
     Ok(entry)
 }
@@ -254,11 +323,11 @@ fn event_from_entry(
     entry.validate_current()?;
     // Ordinary enqueue must never create an event in the migration namespace;
     // historical records require an explicit versioned importer.
-    DecisionAuditId::new(entry.decision_audit_id.as_str().to_owned())
+    DecisionAuditId::new(entry.decision_audit_id().as_str().to_owned())
         .map_err(DecisionAuditEventError::Identity)?;
     let event_id = EventId::new(format!(
         "gatekeep-audit-{}",
-        entry.decision_audit_id.as_str()
+        entry.decision_audit_id().as_str()
     ))
     .map_err(DecisionAuditEventError::Validation)?;
     let payload = serde_json::to_vec(entry).map_err(DecisionAuditEventError::Json)?;
@@ -268,12 +337,12 @@ fn event_from_entry(
         config.source.clone(),
         config.event_type.clone(),
     )
-    .time(entry.occurred_at)
+    .time(entry.occurred_at())
     .datacontenttype(config.content_type.clone())
     .data(EventData::json(payload).map_err(DecisionAuditEventError::Validation)?)
     .build()
     .map_err(DecisionAuditEventError::Validation)?;
-    let tenant = dovecote::TenantId::new(entry.tenant.as_str().to_owned())
+    let tenant = dovecote::TenantId::new(entry.tenant().as_str().to_owned())
         .map_err(DecisionAuditEventError::Validation)?;
     Ok((tenant, event))
 }
