@@ -1,8 +1,8 @@
 # Keepsake Entitlements
 
-`gatekeep-keepsake` connects Gatekeep facts to active Keepsake relations. Use it
-when entitlements, tags, sanctions, risk flags, or gates are already modeled as
-Keepsake relations.
+`gatekeep-keepsake` connects Gatekeep facts to active
+[Keepsake](https://github.com/plethu/keepsake) relations. Use it when
+entitlements, tags, sanctions, risk flags, or gates already live in Keepsake.
 
 ## Relation-Backed Facts
 

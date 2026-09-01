@@ -4,11 +4,12 @@ Gatekeep is a code-first authorization engine for Rust. Policies are ordinary
 Rust values, evaluation is pure and deterministic, and every decision carries
 the reasons that produced it.
 
-Keepsake stores relation lifecycles; Gatekeep decides what those facts permit.
-The crates compose but ship independently.
+[Keepsake](https://github.com/plethu/keepsake) stores relation lifecycles;
+Gatekeep decides what those facts permit. They work together, but neither
+requires the other.
 
-API reference: [docs.rs/gatekeep](https://docs.rs/gatekeep) and the adapter
-crates linked from each crate's manifest.
+The core API is on [docs.rs](https://docs.rs/gatekeep); each adapter links its
+own API from its manifest.
 
 ## Start here
 
@@ -16,8 +17,8 @@ crates linked from each crate's manifest.
 2. [Installation](installation.md)
 3. [Quickstart](quickstart.md)
 
-Read [Combining permit outcomes](concepts/lattice-outcomes.md) before designing graded
-access such as redacted/full records or scope unions.
+Read [Combining permit outcomes](concepts/lattice-outcomes.md) before designing
+graded access such as redacted/full records or scope unions.
 
 ## Concepts
 

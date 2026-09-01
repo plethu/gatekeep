@@ -5,132 +5,62 @@
 >
 > — Emily Dickinson, "Exclusion" (1890)
 
-`gatekeep` 3.0 is a code-first authorization engine for Rust. Policies are ordinary
-Rust values, a pure deterministic core evaluates them, and every decision
-carries the reasons that produced it.
+`gatekeep` is a code-first authorization engine for Rust. Policies are ordinary
+typed values, so the compiler and your tests can see the same rules that run in
+production. Evaluation is deterministic, and every decision includes the facts
+and policy clause that produced it.
 
-The project keeps policy in Rust. A policy is an ordinary, typed value that can
-be composed, tested, serialized, and hashed alongside application code. An
-external policy language can be the right shared contract across services or
-teams; gatekeep targets the case where Rust owns the model and the policy
-should remain visible to the compiler and ordinary tests.
-
-## Documentation
-
-- [docs/](docs/README.md) — guides and reference for integrators
-- [docs.rs/gatekeep](https://docs.rs/gatekeep) — core crate API
-- Adapter crates: [gatekeep-axum](https://docs.rs/gatekeep-axum),
-  [gatekeep-fluent](https://docs.rs/gatekeep-fluent),
-  [gatekeep-keepsake](https://docs.rs/gatekeep-keepsake),
-  [gatekeep-sqlx](https://docs.rs/gatekeep-sqlx)
-
-Read [Combining permit outcomes](docs/concepts/lattice-outcomes.md) before designing
-graded access such as redacted/full records or scope unions.
+It fits applications where Rust owns the authorization model. If policy needs
+to live outside the codebase or cross service and language boundaries, use a
+shared policy system instead.
 
 ## A policy
 
 ```rust
-use gatekeep::{
-    condition, evaluate, policy, DecisiveClause, Effect, Fact, GatekeepResult, KnownFacts,
-    Lattice, ReasonCode, StaticFactId,
-};
+use gatekeep::{condition, evaluate, policy, Effect, Fact, GatekeepResult, KnownFacts, StaticFactId};
 
-// Outcome grade: how much of a record the caller may read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
-enum ReadAccess {
-    Redacted,
-    Full,
-}
-
-impl Lattice for ReadAccess {
-    fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
-    fn join(&self, other: &Self) -> Self { (*self).max(*other) }
-    fn top() -> Self { Self::Full }
-    fn bottom() -> Self { Self::Redacted }
-}
-
-// A fact the application resolves before evaluation.
 struct CaseOwner;
 
 impl Fact for CaseOwner {
     const ID: StaticFactId = StaticFactId::new("case_owner");
 }
 
-fn read_access() -> GatekeepResult<()> {
-    // "The case owner may read the full record."
-    let owner_full_read = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
-        .try_labeled("owner_full_read")?
+fn main() -> GatekeepResult<()> {
+    let may_read = policy::grant((), condition::has::<CaseOwner>())
         .try_reason("not_case_owner")?;
 
-    // The owner is permitted, with the granted grade carried on the effect.
-    let permitted = evaluate(&owner_full_read, &KnownFacts::new().with_present::<CaseOwner>());
-    assert_eq!(permitted.effect, Effect::Permit(ReadAccess::Full));
-
-    // A non-owner is denied, and the decision explains itself instead of
-    // returning a bare "no": the facts that were missing and a stable reason
-    // code your UI or audit log can map to a message.
-    let denied = evaluate(&owner_full_read, &KnownFacts::new());
-    assert_eq!(denied.effect, Effect::Deny);
-    if let DecisiveClause::Deny { reason, unsatisfied, .. } = &denied.trace.decisive {
-        assert_eq!(reason.as_ref().map(ReasonCode::as_str), Some("not_case_owner"));
-        assert_eq!(unsatisfied.len(), 1); // the missing case_owner fact
-    }
+    let facts = KnownFacts::new().with_present::<CaseOwner>();
+    let decision = evaluate(&may_read, &facts);
+    assert_eq!(decision.effect, Effect::Permit(()));
 
     Ok(())
 }
 ```
 
-The application resolves facts before evaluation. Gatekeep is an in-process
-authorization boundary; it does not authenticate requests, manage sessions or
-tenancy, provide a network policy service, or define a separate policy DSL.
-Those concerns remain with application code or a crate built for them.
+Your application authenticates the request and supplies the facts. Gatekeep
+evaluates them. The same policy can authorize one request, become a SQL filter
+through `gatekeep-sqlx`, and leave a decision trace for audit.
 
-Tenant binding is explicit: the application verifies identity and tenant
-membership, then constructs a bounded binding that Gatekeep checks for match
-and freshness. Gatekeep does not verify OIDC/JWT tokens or execute obligations.
+For durable audit, `gatekeep-sqlx` writes complete decision events through
+[Dovecote](https://github.com/plethu/dovecote). The
+[`gatekeep-keepsake`](https://docs.rs/gatekeep-keepsake) adapter reads relation
+state from [Keepsake](https://github.com/plethu/keepsake).
 
-Each policy is inspectable data. Gatekeep can serialize and hash it, explain a
-decision, and answer "which resources can this principal reach?", not just "may
-this principal reach this one?".
+## Install
 
-Partial evaluation reuses the same policy value with `PartialFacts`: mark
-request-known facts as present or absent, leave resource-level facts unknown,
-then lower the residual policy in an application-owned adapter. For SQL-backed
-list queries, `gatekeep-sqlx` maps residual facts to trusted row predicates and
-appends a lowered filter and grade projection to a `sqlx::QueryBuilder`.
-Postgres is the default backend; SQLite and MySQL are available behind feature
-flags.
+```sh
+cargo add gatekeep@3
+```
 
-For durable decision audit, configure an application-owned absolute source URI
-and a Dovecote-backed `AuditSink`. `gatekeep-sqlx` provides
-`PgDovecoteAudit`, `SqliteDovecoteAudit`, and `MySqlDovecoteAudit`. Install the
-selected Dovecote schema, call the adapter's `check_schema`, then pass the sink
-to `Gatekeeper::new(resolver, audit)`. The Axum adapter awaits the audit write before
-returning permit or deny. Each decision becomes one complete JSON event and one
-pending Dovecote delivery; Gatekeep does not maintain a parallel audit table or
-outbox.
+Add only the adapters you need:
+[`gatekeep-axum`](https://docs.rs/gatekeep-axum),
+[`gatekeep-fluent`](https://docs.rs/gatekeep-fluent),
+[`gatekeep-keepsake`](https://docs.rs/gatekeep-keepsake), and
+[`gatekeep-sqlx`](https://docs.rs/gatekeep-sqlx).
 
-The compile-checked [`axum-durable-audit`](examples/axum-durable-audit/src/main.rs)
-example imports `gatekeep_axum::Gatekeeper`, obtains a real application-owned
-`FactResolver`, checks the Dovecote schema, and constructs
-`Gatekeeper::new(resolver, PgDovecoteAudit)`. Use that example as
-the canonical setup when wiring a service.
+Start with the [quickstart](docs/quickstart.md), read about
+[graded outcomes](docs/concepts/lattice-outcomes.md), or browse the full
+[documentation](docs/README.md). The core API is on
+[docs.rs](https://docs.rs/gatekeep).
 
-Use Dovecote's matching migration under its `migrations/` directory. Export
-workers claim and page Dovecote deliveries; Gatekeep's typed `AuditEntry` is the
-event payload and Dovecote owns delivery lifecycle and retry state. The old
-`gatekeep-sqlx` audit migrations remain in this repository as immutable v1
-upgrade artifacts only; 3.0 has no runtime API for their tables.
-
-For the lowering walkthrough, see the `gatekeep-sqlx` docs on
-[docs.rs](https://docs.rs/gatekeep-sqlx) and the
-[`axum-authorized-list`](examples/axum-authorized-list) example.
-
-## License
-
-Licensed under either of:
-
-- Apache License, Version 2.0
-- MIT license
-
-at your option.
+Licensed under `MIT OR Apache-2.0`.

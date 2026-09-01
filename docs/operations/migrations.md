@@ -25,8 +25,9 @@ unprepared multi-statement request.
 
 Gatekeep 3.0 is a coordinated breaking release. First update the Dovecote
 crates and tenant-aware schema to 0.2. Then update the Keepsake dependency and
-bridge to 3.0. Finally update all Gatekeep crates to 3.0 together. Existing rows need an
-explicit, reviewable tenant mapping; never assign a guessed tenant default.
+bridge to 3.0. Finally update all Gatekeep crates to 3.0 together. Existing rows
+need an explicit, reviewable tenant mapping; never assign a guessed tenant
+default.
 Run the binding, resolver, SQL lowering, audit retry, and wrong-scope tests
 against the deployed feature set before switching traffic.
 

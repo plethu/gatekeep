@@ -16,13 +16,10 @@ An Axum integration usually has three parts:
 2. Resolve policy facts from application services.
 3. Attach an audit sink when decisions must be durable.
 
-For durable audit with Postgres:
-
-The compile-checked [`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs)
-example is the canonical setup: it imports `gatekeep_axum::Gatekeeper`, uses an
-application-owned `FactResolver`, checks the Dovecote schema, and attaches
-`PgDovecoteAudit` with `Gatekeeper::new(resolver, audit)`. The
-workspace builds this example as part of its checks.
+For durable Postgres audit, start with the compile-checked
+[`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs) example.
+It covers the application-owned `FactResolver`, Dovecote schema check, and
+`PgDovecoteAudit` construction; the workspace builds it as part of its checks.
 
 The audit sink is awaited before the response is returned. If audit persistence
 fails, the request reports the adapter error and no successful authorization
@@ -42,9 +39,9 @@ boundary. It also checks the resolver envelope's `fresh_until` against the
 separate receipt time and rejects future-dated observations before evaluation
 or audit; neither check applies an implicit clock-skew grace period. Tenant
 authentication and OIDC/JWT verification remain application responsibilities;
-Gatekeep records bounded binding evidence but does not verify tokens. For controlled
-service-to-service paths, use the explicitly named `TrustedServiceBinding` and
-`Context::from_trusted_service` constructor.
+Gatekeep records bounded binding evidence but does not verify tokens. For
+controlled service-to-service paths, use the explicitly named
+`TrustedServiceBinding` and `Context::from_trusted_service` constructor.
 
 ## Denial Responses
 

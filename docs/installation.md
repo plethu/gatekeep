@@ -15,8 +15,9 @@ gatekeep = "3.0"
 gatekeep-axum = "3.0"
 ```
 
-For SQLx list filtering or Dovecote-backed durable decision audit, choose the
-database feature used by the service:
+For SQLx list filtering or
+[Dovecote](https://github.com/plethu/dovecote)-backed durable decision audit,
+choose the database feature used by the service:
 
 ```toml
 [dependencies]
@@ -32,7 +33,8 @@ gatekeep = "3.0"
 gatekeep-fluent = "3.0"
 ```
 
-For entitlements or relation-backed facts stored in Keepsake:
+For entitlements or relation-backed facts stored in
+[Keepsake](https://github.com/plethu/keepsake):
 
 ```toml
 [dependencies]

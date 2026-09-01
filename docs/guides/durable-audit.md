@@ -1,8 +1,8 @@
 # Durable Audit
 
-Durable audit records let a service explain an authorization decision after the
-request is gone. Gatekeep keeps the typed decision in one complete JSON
-Dovecote event; Dovecote owns its durable event and delivery lifecycle.
+Durable audit lets a service explain an authorization decision after the
+request is gone. Gatekeep writes the typed decision as one complete JSON event;
+[Dovecote](https://github.com/plethu/dovecote) stores it and tracks delivery.
 
 ## Setup
 
@@ -13,11 +13,12 @@ Enable the SQLx backend feature and run the matching migration:
 gatekeep-sqlx = { version = "3.0", features = ["postgres"] }
 ```
 
-The compile-checked [`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs)
-example is the canonical setup: it imports `gatekeep_axum::Gatekeeper`, uses an
-application-owned `FactResolver`, checks the Dovecote schema, and attaches
-`PgDovecoteAudit` with `Gatekeeper::new(resolver, audit)`. The
-workspace builds this example as part of its checks.
+The compile-checked
+[`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs) example
+shows the complete Postgres setup: an application-owned `FactResolver`, the
+Dovecote schema check, and `PgDovecoteAudit` attached through
+`Gatekeeper::new(resolver, audit)`. The workspace builds it as part of its
+checks.
 
 The sink implements `gatekeep::AuditSink`. For an existing application
 transaction, call the backend-specific

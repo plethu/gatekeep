@@ -48,11 +48,11 @@ belongs in a reason catalog such as `gatekeep-fluent`, not in the policy value.
   claim individual fact provenance, and it records the digest even when source
   metadata is absent.
 
-Current entries must be built with the typed constructor, which requires a
-validated binding whose tenant matches the entry tenant. The optional binding
-and evidence fields exist only for serde compatibility with pre-3.0 bytes. The
-current Dovecote decoder requires a storage-row tenant, binding, and evidence;
-it never silently downgrades a payload to legacy history.
+Build current entries with the typed constructor. It requires a validated
+binding whose tenant matches the entry tenant. The optional binding and
+evidence fields exist only for serde compatibility with pre-3.0 bytes. The
+current [Dovecote](https://github.com/plethu/dovecote) decoder requires a
+storage-row tenant, binding, and evidence; it rejects legacy-shaped payloads.
 
 `DecisionAuditId::new` reserves the exact, case-sensitive `legacy-` prefix for
 explicit migration identities. The current decoder does not import those
@@ -60,9 +60,9 @@ records; a separately versioned migration importer must construct and validate
 the historical representation before producing a current entry.
 
 The core `AuditSink` trait is async because durable audit usually performs IO.
-`Gatekeeper::new` requires an explicit sink; use the unmistakably named
-`Gatekeeper::unaudited` constructor only when durable audit is deliberately out
-of scope. The test feature exposes `InMemoryAuditSink` for assertions.
+`Gatekeeper::new` requires an explicit sink. Use `Gatekeeper::unaudited` when
+durable audit is out of scope. The test feature exposes `InMemoryAuditSink` for
+assertions.
 
 Obligations in an audit entry describe obligations attached to the selected
 policy path. They are not evidence that obligation execution occurred; the
