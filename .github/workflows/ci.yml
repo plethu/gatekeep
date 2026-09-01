@@ -19,26 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check out the reviewed Dovecote revision
-        uses: actions/checkout@v6
-        with:
-          repository: plethu/dovecote
-          ref: cc079c73d01eb07602344d7da0dcd2019b01bc7c
-          path: .ci/dovecote
-
-      - name: Expose Dovecote at the local path used by Cargo
-        run: ln -s "$GITHUB_WORKSPACE/.ci/dovecote" "$GITHUB_WORKSPACE/../carrier"
-
-      - name: Check out the reviewed Keepsake revision
-        uses: actions/checkout@v6
-        with:
-          repository: plethu/keepsake
-          ref: 392a6e6d8297c5e1ee13260efb69652351b3fdd7
-          path: .ci/keepsake
-
-      - name: Expose Keepsake at the local path used by Cargo
-        run: ln -s "$GITHUB_WORKSPACE/.ci/keepsake" "$GITHUB_WORKSPACE/../keepsake-rs"
-
       - name: Install project tools
         uses: jdx/mise-action@v4
 

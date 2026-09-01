@@ -10,10 +10,10 @@ description = "Shared support for gatekeep authorized-list examples"
 
 [dependencies]
 axum = { workspace = true, features = ["http1"] }
-gatekeep = { path = "../../crates/gatekeep", version = "3.0.0" }
-gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "3.0.0" }
-gatekeep-fluent = { path = "../../crates/gatekeep-fluent", version = "3.0.0" }
-gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "3.0.0" }
+gatekeep = { path = "../../crates/gatekeep", version = "3.0.1" }
+gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "3.0.1" }
+gatekeep-fluent = { path = "../../crates/gatekeep-fluent", version = "3.0.1" }
+gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "3.0.1" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

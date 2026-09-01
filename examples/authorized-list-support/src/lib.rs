@@ -10,7 +10,7 @@ use axum::{
     routing::get,
 };
 use gatekeep::{
-    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Context, Effect,
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context, Effect,
     EvidenceDigest, Fact, FactId, FactResolver, GatekeepError, Lattice, Locale, LowerError, Policy,
     PolicyId, QueryLowering, Residual, ResolveError, StaticFactId, SubjectRef, TenantBinding,
     TenantBindingEvidence, TenantId, condition, partial_evaluate, policy, required_facts,
@@ -144,10 +144,16 @@ where
         .into_iter()
         .collect::<Vec<_>>();
     let clock = gatekeep::SystemClock;
+    state.context.validate_at(clock.now_utc())?;
     let resolution = state
         .resolver
         .resolve_for_query(&required, &state.context, &clock)
         .await?;
+    let received_at = clock.now_utc();
+    state.context.validate_at(received_at)?;
+    resolution
+        .validate_at(received_at)
+        .map_err(ResolveError::Resolution)?;
     let residual = partial_evaluate(&state.list_policy, resolution.facts());
     let lowered = match residual {
         Residual::Pending { residual, .. } => state.lowerer.lower(&residual, &state.context)?,
@@ -310,6 +316,8 @@ enum AppError<E> {
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]
+    Context(#[from] gatekeep::ContextError),
+    #[error(transparent)]
     Resolve(#[from] ResolveError<E>),
     #[error(transparent)]
     Lower(#[from] LowerError),
@@ -325,7 +333,7 @@ impl<E> IntoResponse for AppError<E> {
     fn into_response(self) -> Response {
         match self {
             Self::Authorization(rejection) => rejection.into_response(),
-            Self::Gatekeep(_) | Self::Resolve(_) | Self::Lower(_) => (
+            Self::Gatekeep(_) | Self::Context(_) | Self::Resolve(_) | Self::Lower(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
                     "error": "authorization_error",

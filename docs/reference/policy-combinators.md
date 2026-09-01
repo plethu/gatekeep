@@ -36,10 +36,29 @@ path.
 `deny_when` is useful for ordered fail-closed checks:
 
 ```rust
+# use gatekeep::{condition, policy, Fact, GatekeepResult, Lattice, ReasonCode, StaticFactId};
+# #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+# enum ReadAccess { Redacted, Full }
+# impl Lattice for ReadAccess {
+#     fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
+#     fn join(&self, other: &Self) -> Self { (*self).max(*other) }
+#     fn top() -> Self { Self::Full }
+#     fn bottom() -> Self { Self::Redacted }
+# }
+# struct CaseOwner;
+# impl Fact for CaseOwner { const ID: StaticFactId = StaticFactId::new("case_owner"); }
+# struct SuspendedAccount;
+# impl Fact for SuspendedAccount { const ID: StaticFactId = StaticFactId::new("suspended_account"); }
+# fn main() -> GatekeepResult<()> {
 let policy = policy::all([
-    policy::deny_when(condition::has::<SuspendedAccount>(), "account_suspended"),
+    policy::deny_when(
+        condition::has::<SuspendedAccount>(),
+        ReasonCode::new("account_suspended")?,
+    ),
     policy::grant(ReadAccess::Full, condition::has::<CaseOwner>()),
 ]);
+# Ok(())
+# }
 ```
 
 Put deny guards before positive grants when the rule should stop on the guard.

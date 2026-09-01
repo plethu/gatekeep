@@ -21,9 +21,23 @@ Grant clauses can carry reason codes. A denial reason gives UI, API, and audit
 layers a stable code plus structured parameters.
 
 ```rust
+# use gatekeep::{condition, policy, Fact, GatekeepResult, Lattice, StaticFactId};
+# #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+# enum ReadAccess { Redacted, Full }
+# impl Lattice for ReadAccess {
+#     fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
+#     fn join(&self, other: &Self) -> Self { (*self).max(*other) }
+#     fn top() -> Self { Self::Full }
+#     fn bottom() -> Self { Self::Redacted }
+# }
+# struct CaseOwner;
+# impl Fact for CaseOwner { const ID: StaticFactId = StaticFactId::new("case_owner"); }
+# fn main() -> GatekeepResult<()> {
 let policy = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
     .try_labeled("owner_full_read")?
     .try_reason("not_case_owner")?;
+# Ok(())
+# }
 ```
 
 The reason code should be stable enough to translate and search. Human wording

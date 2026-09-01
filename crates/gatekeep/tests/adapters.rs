@@ -60,6 +60,26 @@ fn fact_resolution_serde_rejects_invalid_freshness() -> Result<(), TestError> {
     Ok(())
 }
 
+#[test]
+fn fact_resolution_evidence_serde_rejects_invalid_freshness() -> Result<(), TestError> {
+    let observed_at = time::OffsetDateTime::UNIX_EPOCH + time::Duration::hours(2);
+    let source = BindingProvenance::new("test.facts")?;
+    let resolution = FactResolution::new(
+        KnownFacts::new(),
+        Some(gatekeep::FactResolutionMetadata::new(
+            source,
+            None,
+            Some(observed_at + time::Duration::hours(1)),
+        )),
+        observed_at,
+    )?;
+    let mut value = serde_json::to_value(FactResolutionEvidence::from_resolution(&resolution)?)?;
+    value["fresh_until"] = serde_json::to_value(observed_at - time::Duration::hours(1))?;
+
+    assert!(serde_json::from_value::<FactResolutionEvidence>(value).is_err());
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 enum Access {
     Denied,
@@ -91,7 +111,7 @@ async fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> 
         &policy::grant(Access::Full, condition::always()),
         &KnownFacts::new(),
     );
-    let entry = AuditEntry {
+    let mut entry = AuditEntry {
         decision_audit_id: gatekeep::DecisionAuditId::new("decision-1")?,
         occurred_at: time::OffsetDateTime::UNIX_EPOCH,
         request_id: None,
@@ -132,7 +152,13 @@ async fn in_memory_audit_sink_records_cloned_entries() -> Result<(), TestError> 
     sink.record(&entry).await?;
     let entries = sink.entries()?;
 
-    assert_eq!(entries, vec![entry]);
+    assert_eq!(entries, vec![entry.clone()]);
+
+    entry.effect = EffectKind::Deny;
+    assert!(matches!(
+        entry.validate_current(),
+        Err(gatekeep::AuditEntryError::EffectTraceMismatch)
+    ));
     Ok(())
 }
 
@@ -335,6 +361,10 @@ fn trusted_service_binding_is_explicitly_named() -> Result<(), TestError> {
 fn tenant_id_uses_dovecote_string_contract() {
     assert!(matches!(
         TenantId::new(""),
+        Err(gatekeep::GatekeepError::EmptyIdentifier { field: "tenant_id" })
+    ));
+    assert!(matches!(
+        TenantId::new("   "),
         Err(gatekeep::GatekeepError::EmptyIdentifier { field: "tenant_id" })
     ));
     assert!(matches!(

@@ -12,16 +12,32 @@ it, partially evaluate it, inspect required facts, hash it, and record the
 decisive clause.
 
 ```rust
+# use gatekeep::{condition, policy, Fact, Lattice, ReasonCode, StaticFactId};
+# #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+# enum ReadAccess { Redacted, Full }
+# impl Lattice for ReadAccess {
+#     fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
+#     fn join(&self, other: &Self) -> Self { (*self).max(*other) }
+#     fn top() -> Self { Self::Full }
+#     fn bottom() -> Self { Self::Redacted }
+# }
+# struct CaseOwner;
+# impl Fact for CaseOwner { const ID: StaticFactId = StaticFactId::new("case_owner"); }
+# struct SuspendedAccount;
+# impl Fact for SuspendedAccount { const ID: StaticFactId = StaticFactId::new("suspended_account"); }
+# fn main() -> gatekeep::GatekeepResult<()> {
 let owner = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
     .try_labeled("owner_full_read")?
     .try_reason("not_case_owner")?;
 
 let not_suspended = policy::deny_when(
     condition::has::<SuspendedAccount>(),
-    "account_suspended",
+    ReasonCode::new("account_suspended")?,
 );
 
 let read_policy = policy::all([not_suspended, owner]);
+# Ok(())
+# }
 ```
 
 `all` combines requirements. `any` combines alternatives. `or_else` supplies a

@@ -678,6 +678,11 @@ fn policy_hash_changes_with_structure() -> Result<(), TestError> {
     let second = policy::grant(ReadTier::Full, condition::always());
 
     assert_ne!(first.hash()?, second.hash()?);
+    assert_eq!(gatekeep::POLICY_HASH_FORMAT_VERSION, 1);
+    assert_eq!(
+        first.hash()?.as_str(),
+        "cb7fc0cbe8613ae3dd4d9e371d1e6862aa0f55392d743f8ab424cbfaed9aba8a"
+    );
     Ok(())
 }
 

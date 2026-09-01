@@ -9,6 +9,7 @@ members = [
     "examples/axum-durable-audit",
     "examples/axum-keepsake-authorized-list",
     "examples/authorized-list-support",
+    "tests/repository-docs",
 ]
 resolver = "3"
 
@@ -25,12 +26,12 @@ async-trait = "0.1.89"
 axum = { version = "0.8.7", default-features = false, features = ["json", "tokio"] }
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", default-features = false, features = ["std"] }
-dovecote = { version = "0.2.0", path = "../carrier/crates/dovecote" }
-dovecote-sqlx-mysql = { version = "0.2.0", path = "../carrier/crates/dovecote-sqlx-mysql", default-features = false, features = ["runtime-tokio"] }
-dovecote-sqlx-postgres = { version = "0.2.0", path = "../carrier/crates/dovecote-sqlx-postgres", default-features = false, features = ["runtime-tokio"] }
-dovecote-sqlx-sqlite = { version = "0.2.0", path = "../carrier/crates/dovecote-sqlx-sqlite", default-features = false, features = ["runtime-tokio"] }
+dovecote = "0.2"
+dovecote-sqlx-mysql = { version = "0.2", default-features = false, features = ["runtime-tokio"] }
+dovecote-sqlx-postgres = { version = "0.2", default-features = false, features = ["runtime-tokio"] }
+dovecote-sqlx-sqlite = { version = "0.2", default-features = false, features = ["runtime-tokio"] }
 fluent-bundle = "0.16.0"
-keepsake = { version = "3.0.0", path = "../keepsake-rs/crates/keepsake" }
+keepsake = "3.0"
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
 proptest = "1.9.0"
 serde = { version = "1.0.228", features = ["derive"] }

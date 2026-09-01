@@ -8,9 +8,9 @@ use dovecote::{
 };
 use gatekeep::{
     AuditEntry, DecisionAuditId, DenialReason, DenyShape, EffectKind, FactId, FactResolution,
-    FactResolutionEvidence, GatekeepError, ObligationId, ParamKey, PolicyAnchor, PolicyHash,
-    PolicyId, Presence, ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding,
-    TenantId, Trace, TraceClause, TrustedServiceBinding,
+    FactResolutionEvidence, GatekeepError, ParamKey, PolicyAnchor, PolicyHash, PolicyId, Presence,
+    ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding, TenantId, Trace,
+    TraceClause, TrustedServiceBinding,
 };
 use gatekeep_sqlx::{DecisionAuditConfig, SqliteDovecoteAudit, decode_decision_audit};
 use sqlx::{SqlitePool, raw_sql, sqlite::SqlitePoolOptions};
@@ -350,7 +350,7 @@ fn audit_entry_for_tenant(tenant_name: &str) -> Result<AuditEntry, GatekeepError
             policy_hash: PolicyHash::new("hash")?,
         },
         effect: EffectKind::Deny,
-        obligations: vec![ObligationId::new("record-denial")?],
+        obligations: Vec::new(),
         consulted: vec![(missing.clone(), Presence::Absent)],
         decisive: decisive.clone(),
         denial_reason: Some(reason),

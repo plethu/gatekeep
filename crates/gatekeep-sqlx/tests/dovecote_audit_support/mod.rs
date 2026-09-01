@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use gatekeep::{
     AuditEntry, DenialReason, DenyShape, EffectKind, FactId, FactResolution,
-    FactResolutionEvidence, GatekeepError, ObligationId, ParamKey, PolicyAnchor, PolicyHash,
-    PolicyId, Presence, ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding,
-    TenantId, Trace, TraceClause, TrustedServiceBinding,
+    FactResolutionEvidence, GatekeepError, ParamKey, PolicyAnchor, PolicyHash, PolicyId, Presence,
+    ReasonCode, ReasonValue, RequestId, SubjectRef, SubjectSlot, TenantBinding, TenantId, Trace,
+    TraceClause, TrustedServiceBinding,
 };
 use time::OffsetDateTime;
 
@@ -36,7 +36,7 @@ pub fn audit_entry() -> Result<AuditEntry, GatekeepError> {
             policy_hash: PolicyHash::new("hash")?,
         },
         effect: EffectKind::Deny,
-        obligations: vec![ObligationId::new("record-denial")?],
+        obligations: Vec::new(),
         consulted: vec![(missing.clone(), Presence::Absent)],
         decisive: decisive.clone(),
         denial_reason: Some(reason),

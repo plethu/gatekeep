@@ -57,7 +57,11 @@ pub fn required_residual_facts<O>(policy: &ResidualPolicy<O>) -> BTreeSet<FactId
 }
 
 impl<O: Serialize> Policy<O> {
-    /// Computes a stable hash of the serialized policy value.
+    /// Computes a format-1 stable hash of the serialized policy value.
+    ///
+    /// Format 1 is lowercase BLAKE3 hex over the exact Postcard serialization
+    /// of the policy. [`POLICY_HASH_FORMAT_VERSION`] names this durable
+    /// contract; changing the encoding or domain requires a major release.
     ///
     /// # Errors
     ///
@@ -69,6 +73,9 @@ impl<O: Serialize> Policy<O> {
         ))
     }
 }
+
+/// Durable encoding version used by [`Policy::hash`].
+pub const POLICY_HASH_FORMAT_VERSION: u16 = 1;
 
 #[derive(Default)]
 struct Consulted(Vec<(FactId, Presence)>);

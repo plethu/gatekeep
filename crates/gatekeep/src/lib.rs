@@ -34,7 +34,10 @@ pub use decision::{
     Decision, DecisionTrace, DecisiveClause, DenialReason, DenyShape, Effect, ReasonValue, Trace,
     TraceClause, TraceError,
 };
-pub use evaluate::{evaluate, evaluate_residual, required_facts, required_residual_facts};
+pub use evaluate::{
+    POLICY_HASH_FORMAT_VERSION, evaluate, evaluate_residual, required_facts,
+    required_residual_facts,
+};
 pub use facts::{KnownFacts, PartialFacts, Presence, TraceValue};
 pub use identity::{
     ClauseLabel, DecisionAuditId, DecisionAuditOccurrence, DecisionAuditOccurrenceError, Fact,

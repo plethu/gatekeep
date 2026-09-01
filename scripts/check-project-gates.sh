@@ -64,7 +64,14 @@ echo
 echo "== cargo deny supply-chain checks =="
 (
   cd "$repo_root"
-  just supply-chain
+  if command -v cargo-deny >/dev/null 2>&1; then
+    cargo deny --all-features check advisories bans licenses sources
+  elif command -v mise >/dev/null 2>&1; then
+    mise exec -- cargo-deny --all-features check advisories bans licenses sources
+  else
+    echo "cargo-deny is unavailable; run 'mise install'" >&2
+    exit 2
+  fi
 )
 
 echo

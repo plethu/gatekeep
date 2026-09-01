@@ -11,10 +11,10 @@ description = "Runnable axum and keepsake authorized-list example for gatekeep"
 [dependencies]
 axum = { workspace = true, features = ["http1"] }
 chrono.workspace = true
-gatekeep = { path = "../../crates/gatekeep", version = "3.0.0" }
+gatekeep = { path = "../../crates/gatekeep", version = "3.0.1" }
 gatekeep-example-authorized-list-support = { path = "../authorized-list-support", version = "0.1.0" }
-gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "3.0.0" }
-gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "3.0.0" }
+gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "3.0.1" }
+gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "3.0.1" }
 keepsake = { workspace = true, features = ["test"] }
 serde_json.workspace = true
 thiserror.workspace = true

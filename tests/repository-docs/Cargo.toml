@@ -1,0 +1,14 @@
+[package]
+name = "gatekeep-repository-docs"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+
+[dependencies]
+gatekeep = { version = "3.0.1", path = "../../crates/gatekeep" }
+serde.workspace = true
+
+[lints]
+workspace = true

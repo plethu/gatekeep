@@ -83,7 +83,7 @@ fn validate_identifier(field: &'static str, value: impl Into<String>) -> Gatekee
 
 fn validate_tenant_id(value: impl Into<String>) -> GatekeepResult<String> {
     let value = value.into();
-    if value.is_empty() {
+    if value.trim().is_empty() {
         return Err(GatekeepError::EmptyIdentifier { field: "tenant_id" });
     }
 

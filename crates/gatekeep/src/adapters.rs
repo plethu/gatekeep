@@ -7,9 +7,9 @@ use thiserror::Error;
 use crate::{
     ApplicationVerifiedTenantBinding, BindingProvenance, Decision, DecisionAuditId,
     DecisionAuditOccurrence, DenialReason, EvidenceDigest, FactId, KnownFacts, Locale,
-    ObligationId, PartialFacts, PolicyHash, PolicyId, Presence, RequestId, ResidualPolicy,
-    SubjectRef, SubjectSlot, TenantBinding, TenantBindingError, TenantId, Trace, TraceClause,
-    TrustedServiceBinding,
+    ObligationId, PartialFacts, PolicyHash, PolicyId, Presence, ReasonValue, RequestId,
+    ResidualPolicy, SubjectRef, SubjectSlot, TenantBinding, TenantBindingError, TenantId, Trace,
+    TraceClause, TrustedServiceBinding,
 };
 
 /// Application-owned source of UTC instants used at adapter boundaries.
@@ -431,7 +431,7 @@ impl FactResolutionMetadata {
 }
 
 /// Bounded evidence for the complete resolved fact set used by one decision.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FactResolutionEvidence {
     source: Option<BindingProvenance>,
     revision: Option<BindingProvenance>,
@@ -440,7 +440,46 @@ pub struct FactResolutionEvidence {
     fact_set_digest: EvidenceDigest,
 }
 
+#[derive(Deserialize)]
+struct FactResolutionEvidenceWire {
+    source: Option<BindingProvenance>,
+    revision: Option<BindingProvenance>,
+    observed_at: time::OffsetDateTime,
+    fresh_until: Option<time::OffsetDateTime>,
+    fact_set_digest: EvidenceDigest,
+}
+
+impl<'de> Deserialize<'de> for FactResolutionEvidence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = FactResolutionEvidenceWire::deserialize(deserializer)?;
+        let evidence = Self {
+            source: wire.source,
+            revision: wire.revision,
+            observed_at: wire.observed_at,
+            fresh_until: wire.fresh_until,
+            fact_set_digest: wire.fact_set_digest,
+        };
+        evidence.validate().map_err(D::Error::custom)?;
+        Ok(evidence)
+    }
+}
+
 impl FactResolutionEvidence {
+    fn validate(&self) -> Result<(), FactResolutionError> {
+        if let Some(fresh_until) = self.fresh_until
+            && fresh_until < self.observed_at
+        {
+            return Err(FactResolutionError::InvalidFreshnessWindow {
+                observed_at: self.observed_at,
+                fresh_until,
+            });
+        }
+        Ok(())
+    }
+
     /// Digests a complete fact set while retaining only bounded evidence.
     ///
     /// The digest is over Gatekeep's deterministic fact representation. This
@@ -791,6 +830,27 @@ pub enum AuditEntryError {
     /// Current entries must retain the deterministic fact-set evidence.
     #[error("current audit entry is missing fact-resolution evidence")]
     MissingFactResolution,
+    /// Fact-resolution evidence has an impossible freshness window.
+    #[error("audit entry carries invalid fact-resolution evidence")]
+    InvalidFactResolutionEvidence(#[source] FactResolutionError),
+    /// The duplicated decisive clause disagrees with the complete trace.
+    #[error("audit entry decisive clause does not match its trace")]
+    DecisiveTraceMismatch,
+    /// The duplicated consulted-fact list disagrees with the complete trace.
+    #[error("audit entry consulted facts do not match its trace")]
+    ConsultedTraceMismatch,
+    /// The effect disagrees with the decisive trace clause.
+    #[error("audit entry effect does not match its decisive trace clause")]
+    EffectTraceMismatch,
+    /// Permit decisions cannot carry a denial reason.
+    #[error("permit audit entry carries a denial reason")]
+    PermitWithDenialReason,
+    /// Deny decisions cannot carry permit-path obligations.
+    #[error("deny audit entry carries obligations")]
+    DenyWithObligations,
+    /// The materialized denial reason disagrees with the decisive trace.
+    #[error("audit entry denial reason does not match its decisive trace clause")]
+    DenialReasonMismatch,
 }
 
 impl AuditEntry {
@@ -855,7 +915,9 @@ impl AuditEntry {
     /// # Errors
     ///
     /// Returns [`AuditEntryError`] when current binding or fact evidence is
-    /// absent, or when the binding names another tenant.
+    /// absent or invalid, when the binding names another tenant, or when the
+    /// denormalized decision fields contradict one another. Structural
+    /// binding and evidence errors take precedence over semantic errors.
     pub fn validate_current(&self) -> Result<(), AuditEntryError> {
         let binding = self
             .binding
@@ -865,9 +927,104 @@ impl AuditEntry {
             return Err(AuditEntryError::BindingTenantMismatch);
         }
 
-        if self.fact_resolution.is_none() {
-            return Err(AuditEntryError::MissingFactResolution);
+        self.fact_resolution
+            .as_ref()
+            .ok_or(AuditEntryError::MissingFactResolution)?
+            .validate()
+            .map_err(AuditEntryError::InvalidFactResolutionEvidence)?;
+        self.validate_semantics()
+    }
+
+    /// Validates consistency between the denormalized decision fields.
+    ///
+    /// This check applies to both current entries and decoded legacy history;
+    /// it does not require current tenant-binding or fact-resolution evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuditEntryError`] when effect, trace, consulted facts,
+    /// obligations, or denial reason contradict one another.
+    pub fn validate_semantics(&self) -> Result<(), AuditEntryError> {
+        if self.decisive != self.trace.decisive {
+            return Err(AuditEntryError::DecisiveTraceMismatch);
         }
+
+        if self.consulted != self.trace.consulted {
+            return Err(AuditEntryError::ConsultedTraceMismatch);
+        }
+
+        match (&self.effect, &self.decisive) {
+            (EffectKind::Permit, TraceClause::Permit { .. }) => {
+                if self.denial_reason.is_some() {
+                    return Err(AuditEntryError::PermitWithDenialReason);
+                }
+            }
+            (EffectKind::Deny, TraceClause::Deny { .. }) => {
+                if !self.obligations.is_empty() {
+                    return Err(AuditEntryError::DenyWithObligations);
+                }
+
+                if !denial_reason_matches_trace(self.denial_reason.as_ref(), &self.decisive) {
+                    return Err(AuditEntryError::DenialReasonMismatch);
+                }
+            }
+            _ => return Err(AuditEntryError::EffectTraceMismatch),
+        }
+
         Ok(())
     }
+}
+
+fn denial_reason_matches_trace(reason: Option<&DenialReason>, decisive: &TraceClause) -> bool {
+    let TraceClause::Deny {
+        denied,
+        unsatisfied,
+        label,
+        reason: reason_code,
+        shape,
+    } = decisive
+    else {
+        return reason.is_none();
+    };
+
+    let expected_code = reason_code
+        .as_ref()
+        .map(crate::ReasonCode::as_str)
+        .or_else(|| label.as_ref().map(crate::ClauseLabel::as_str));
+    let Some(expected_code) = expected_code else {
+        return reason.is_none();
+    };
+
+    let Some(reason) = reason else {
+        return false;
+    };
+
+    if reason.code.as_str() != expected_code || reason.shape != *shape {
+        return false;
+    }
+
+    let actual = reason
+        .params
+        .iter()
+        .map(|(key, value)| (key.as_str(), value))
+        .collect::<BTreeMap<_, _>>();
+    if actual.len() != unsatisfied.len() + usize::from(denied.is_some()) {
+        return false;
+    }
+
+    for (index, fact) in unsatisfied.iter().enumerate() {
+        let key = if index == 0 {
+            "missing_fact".to_owned()
+        } else {
+            format!("missing_fact_{index}")
+        };
+
+        if actual.get(key.as_str()) != Some(&&ReasonValue::Fact(fact.clone())) {
+            return false;
+        }
+    }
+
+    denied.as_ref().is_none_or(|value| {
+        actual.get("denied_outcome") == Some(&&ReasonValue::Outcome(value.clone()))
+    })
 }

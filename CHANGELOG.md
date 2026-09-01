@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## [3.0.1] - 2026-09-01
+
+### Correctness
+
+- Added semantic validation for durable audit entries so duplicated effect,
+  decisive-clause, consulted-fact, obligation, denial-reason, and trace fields
+  cannot contradict one another at a current audit boundary.
+- Made the authorized-list example perform the same pre-resolution and
+  receipt-time binding and resolver-freshness checks as point authorization.
+- Declared policy-hash format 1 as the durable Postcard-plus-BLAKE3 contract
+  and froze it with a golden vector.
+- Aligned tenant validation with Keepsake and Dovecote by rejecting
+  whitespace-only identities.
+
+### Documentation and packaging
+
+- Added Rustdoc compilation coverage for every Rust code block in the README
+  and hand-written guides, and repaired the incomplete examples it exposed.
+- Removed sibling-checkout paths from external Dovecote and Keepsake
+  dependencies so a standalone Gatekeep clone resolves them from crates.io.
+- Retained compatibility with the published Dovecote 0.2 and Keepsake 3.0
+  series while resolving both dependencies from crates.io.
+
 ## [3.0.0] - 2026-08-28
 
 ### `gatekeep`
