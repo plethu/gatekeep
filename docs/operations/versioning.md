@@ -16,9 +16,9 @@ Rust API and the event mapping contract.
 - **Patch**: bug fixes and non-breaking schema corrections.
 
 Gatekeep crates can advance independently when their compatibility boundaries
-differ. The current release candidates are:
+differ. The coordinated release versions are:
 
-| Crate | Candidate | Compatible dependencies |
+| Crate | Version | Compatible dependencies |
 | --- | --- | --- |
 | gatekeep | 4.0.1 | Runtime-free authorization core |
 | gatekeep-sqlx | 4.0.1 | Gatekeep 4 and Dovecote 0.2 |
@@ -47,7 +47,7 @@ schema; your service decides when and how to apply them.
 
 ## Coordinated release checks
 
-Before publishing the current candidates:
+Before publishing a coordinated release:
 
 1. Obtain green `ci` / `gates` results for the reviewed Gatekeep commit. That job
    runs the canonical gate and the PostgreSQL/MySQL database lanes. Registry-only
@@ -66,10 +66,10 @@ Before publishing the current candidates:
    after Keepsake 6 is available. Do not republish unchanged 4.0.0 Axum or Fluent
    versions.
 4. Record the individual crate versions in release notes and tags. This release
-   is not a claim that every crate has become version 5. Update candidate
-   changelog headings only when the corresponding release is ready.
+   is not a claim that every crate has become version 5. Finalize the dated changelog entries before creating the
+   release tag.
 
-Dovecote's candidate 0.2.2 remains compatible with the existing 0.2 minimum and
+Dovecote 0.2.2 remains compatible with the existing 0.2 minimum and
 is not a newly required Gatekeep runtime API. Its reviewed source commit is
 required for the current locked integration proof. Source CI, dependency release,
 registry package verification and final publication remain distinct steps.

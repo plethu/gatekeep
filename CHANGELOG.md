@@ -1,6 +1,6 @@
 # Changelog
 
-## gatekeep-keepsake 5.0.0 — 2026-09-07 release candidate
+## gatekeep-keepsake 5.0.0 — 2026-09-07
 
 - Uses Keepsake 6.0 for effective relation state at the supplied observation time.
   Timed restrictions become absent at their deadline without waiting for a worker.
@@ -11,7 +11,7 @@
 - Adds the executable [caller-owned transaction consumer](examples/relation-lifecycle/README.md).
   The durable audit schema and all published migration bytes remain unchanged.
 
-## gatekeep 4.0.1 and gatekeep-sqlx 4.0.1 — 2026-09-07 release candidates
+## gatekeep 4.0.1 and gatekeep-sqlx 4.0.1 — 2026-09-07
 
 - `gatekeep`: static identifiers now reject Unicode-only whitespace consistently
   with owned identifiers; static tenant identities also reject C1 controls.
