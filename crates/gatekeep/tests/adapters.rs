@@ -2,6 +2,8 @@
 
 #![cfg(feature = "test")]
 
+use std::cmp;
+
 use std::collections::BTreeMap;
 
 use gatekeep::{
@@ -89,11 +91,11 @@ enum Access {
 
 impl gatekeep::Lattice for Access {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {

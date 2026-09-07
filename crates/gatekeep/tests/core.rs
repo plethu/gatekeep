@@ -7,6 +7,7 @@ use gatekeep::{
     partial_evaluate, policy, required_facts,
 };
 use proptest::prelude::*;
+use std::cmp;
 
 #[derive(Debug, thiserror::Error)]
 enum TestError {
@@ -119,11 +120,11 @@ impl Lattice for Scope {
 
 impl Lattice for ReadTier {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {

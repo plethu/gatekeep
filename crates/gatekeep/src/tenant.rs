@@ -1,8 +1,8 @@
 //! Explicit tenant bindings carried by authorization contexts.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as SerdeError};
 use thiserror::Error;
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::TenantId;
 
@@ -47,7 +47,7 @@ impl<'de> Deserialize<'de> for BindingProvenance {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        Self::new(value).map_err(SerdeError::custom)
     }
 }
 
@@ -168,7 +168,7 @@ impl<'de> Deserialize<'de> for ApplicationVerifiedTenantBinding {
             fields.valid_from,
             fields.valid_until,
         )
-        .map_err(serde::de::Error::custom)
+        .map_err(SerdeError::custom)
     }
 }
 
@@ -191,8 +191,7 @@ impl ApplicationVerifiedTenantBinding {
         valid_from: OffsetDateTime,
         valid_until: OffsetDateTime,
     ) -> Result<Self, TenantBindingError> {
-        let lifetime = valid_until - valid_from;
-        if lifetime <= Duration::ZERO || evidence.authenticated_at() > valid_until {
+        if valid_until <= valid_from || evidence.authenticated_at() > valid_until {
             return Err(TenantBindingError::InvalidWindow);
         }
         Ok(Self {

@@ -1,6 +1,6 @@
 [package]
 name = "gatekeep-sqlx"
-version = "4.0.0"
+version = "4.0.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -15,9 +15,27 @@ documentation = "https://docs.rs/gatekeep-sqlx"
 
 [features]
 default = ["postgres"]
-postgres = ["sqlx/postgres", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-postgres"]
-sqlite = ["sqlx/sqlite", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-sqlite"]
-mysql = ["sqlx/mysql", "sqlx/time", "sqlx/uuid", "dep:dovecote", "dep:dovecote-sqlx-mysql"]
+postgres = [
+  "sqlx/postgres",
+  "sqlx/time",
+  "sqlx/uuid",
+  "dep:dovecote",
+  "dep:dovecote-sqlx-postgres",
+]
+sqlite = [
+  "sqlx/sqlite",
+  "sqlx/time",
+  "sqlx/uuid",
+  "dep:dovecote",
+  "dep:dovecote-sqlx-sqlite",
+]
+mysql = [
+  "sqlx/mysql",
+  "sqlx/time",
+  "sqlx/uuid",
+  "dep:dovecote",
+  "dep:dovecote-sqlx-mysql",
+]
 postgres-tests = ["postgres", "sqlx/runtime-tokio"]
 sqlite-tests = ["sqlite", "sqlx/runtime-tokio"]
 mysql-tests = ["mysql", "sqlx/runtime-tokio"]

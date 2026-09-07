@@ -1,6 +1,9 @@
 //! MySQL-backed gatekeep `SQLx` differential tests.
 #![cfg(feature = "mysql-tests")]
 
+use std::cmp;
+use std::env;
+
 #[path = "mysql/dovecote_audit.rs"]
 mod dovecote_audit;
 
@@ -25,11 +28,11 @@ enum Tier {
 
 impl Lattice for Tier {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {
@@ -119,7 +122,7 @@ async fn selected_rows(
 }
 
 async fn pool() -> TestResult<MySqlPool> {
-    let database_url = std::env::var("MYSQL_DATABASE_URL")?;
+    let database_url = env::var("MYSQL_DATABASE_URL")?;
     validate_database_url_for_backend::<MySqlBackend>(&database_url)?;
     Ok(MySqlPoolOptions::new()
         .max_connections(1)
@@ -265,12 +268,12 @@ const fn presence(value: bool) -> Presence {
     }
 }
 
-type TestResult<T> = core::result::Result<T, TestError>;
+type TestResult<T> = Result<T, TestError>;
 
 #[derive(Debug, thiserror::Error)]
 enum TestError {
     #[error(transparent)]
-    Env(#[from] std::env::VarError),
+    Env(#[from] env::VarError),
     #[error(transparent)]
     Driver(#[from] gatekeep_sqlx::SqlxDriverError),
     #[error(transparent)]

@@ -7,9 +7,12 @@ test_db_up := env_var_or_default("TEST_DB_UP", "1")
 
 fmt:
     cargo fmt --all
+    cargo fmt --manifest-path examples/relation-lifecycle/Cargo.toml
+    taplo fmt
 
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --workspace --lib --bins --all-features -- -D warnings -D clippy::arithmetic_side_effects -D clippy::panic_in_result_fn -D unreachable_pub
 
 supply-chain:
     if ! command -v cargo-deny >/dev/null 2>&1; then echo "cargo-deny is unavailable; run 'mise install'" >&2; exit 2; fi
@@ -40,6 +43,12 @@ test-db-mysql:
     MYSQL_DATABASE_URL="{{ mysql_database_url }}" cargo test -p gatekeep-sqlx --test mysql --features mysql-tests -- --ignored --test-threads=1
 
 test-db-all: test-db-postgres test-db-mysql
+
+check-relation-consumer:
+    scripts/check-relation-consumer.sh
+
+test-relation-consumer:
+    scripts/check-relation-consumer.sh --live
 
 check:
     scripts/check-project-gates.sh

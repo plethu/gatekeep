@@ -13,7 +13,7 @@ axum = { workspace = true, features = ["http1"] }
 gatekeep = { path = "../../crates/gatekeep", version = "4.0.0" }
 gatekeep-example-authorized-list-support = { path = "../authorized-list-support", version = "0.1.0" }
 gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "4.0.0" }
-gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "4.0.0" }
+gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "5.0.0" }
 keepsake = { workspace = true, features = ["test"] }
 serde_json.workspace = true
 thiserror.workspace = true

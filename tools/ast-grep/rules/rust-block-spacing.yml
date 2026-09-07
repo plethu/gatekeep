@@ -4,8 +4,8 @@ severity: error
 message: Add a blank line after this control-flow block.
 note: |
   Heuristic for missing blank lines after control-flow closing braces. Run
-  `cargo fmt` first; rustfmt preserves manual blanks. Suppress with
-  `// ast-grep-ignore: rust-block-spacing` when the spacing is intentional.
+  `cargo fmt` first; rustfmt preserves manual blanks. Keep control-flow
+  boundaries visually distinct without suppressing the structural check.
 rule:
   any:
     - all:

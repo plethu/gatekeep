@@ -1,3 +1,4 @@
+use crate::condition;
 use crate::{
     ClauseLabel, Condition, DenyShape, GatekeepResult, ObligationId, ObligationSpec, Policy,
     ReasonCode,
@@ -25,7 +26,7 @@ pub fn deny_when<O: crate::Lattice>(
     condition: Condition,
     reason: impl IntoReasonCode,
 ) -> Policy<O> {
-    grant(O::top(), crate::condition::not(condition)).reason(reason)
+    grant(O::top(), condition::not(condition)).reason(reason)
 }
 
 /// Builds a conditional grant policy.

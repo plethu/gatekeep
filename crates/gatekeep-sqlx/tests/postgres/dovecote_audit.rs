@@ -1,5 +1,8 @@
+use std::env;
 use std::error::Error;
 use std::sync::OnceLock;
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
 
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
@@ -13,13 +16,10 @@ mod audit_support;
 
 type TestResult<T> = Result<T, Box<dyn Error>>;
 
-static TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-async fn serialize_live_test() -> tokio::sync::MutexGuard<'static, ()> {
-    TEST_LOCK
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
+async fn serialize_live_test() -> MutexGuard<'static, ()> {
+    TEST_LOCK.get_or_init(|| Mutex::new(())).lock().await
 }
 
 #[tokio::test]
@@ -174,7 +174,7 @@ fn postgres_current_decoder_rejects_reserved_legacy_identity() -> TestResult<()>
 }
 
 async fn pool() -> Result<PgPool, Box<dyn Error>> {
-    let database_url = std::env::var("DATABASE_URL")?;
+    let database_url = env::var("DATABASE_URL")?;
     gatekeep_sqlx::validate_database_url_for_backend::<gatekeep_sqlx::PostgresBackend>(
         &database_url,
     )?;
@@ -191,9 +191,14 @@ async fn prepare_database(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     .fetch_one(pool)
     .await?;
     if !installed {
-        raw_sql(dovecote_sqlx_postgres::MIGRATIONS[0].sql())
-            .execute(pool)
-            .await?;
+        raw_sql(
+            dovecote_sqlx_postgres::MIGRATIONS
+                .first()
+                .ok_or("fixture migration is missing")?
+                .sql(),
+        )
+        .execute(pool)
+        .await?;
     }
     dovecote_sqlx_postgres::check_schema(pool).await?;
     sqlx::query("DELETE FROM dovecote_deliveries")

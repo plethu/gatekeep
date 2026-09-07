@@ -12,10 +12,11 @@ description = "Compile-checked Axum and Dovecote audit setup for gatekeep"
 async-trait.workspace = true
 gatekeep = { path = "../../crates/gatekeep", version = "4.0.0" }
 gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "4.0.0" }
-gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "4.0.0", features = ["postgres"] }
+gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "4.0.0", features = [
+  "postgres",
+] }
 sqlx = { workspace = true, features = ["postgres", "runtime-tokio"] }
 tokio.workspace = true
-time.workspace = true
 
 [lints]
 workspace = true

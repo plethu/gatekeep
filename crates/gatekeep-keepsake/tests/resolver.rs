@@ -2,6 +2,8 @@
 
 mod support;
 
+use gatekeep::{condition, policy};
+use std::io;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -51,13 +53,13 @@ async fn decision_resolution_maps_active_relations_to_known_facts() -> TestResul
 
 #[tokio::test]
 async fn gatekeeper_uses_application_clock_for_keepsake_observation() -> TestResult<()> {
-    let now = time::OffsetDateTime::UNIX_EPOCH + time::Duration::days(1);
+    let now = support::fixed_time() + time::Duration::days(1);
     let principal = subject("user", "u_1")?;
     let resolver = resolver_for(&principal)?.with_relation_spec::<PaidPlan, PaidPlanRelation>()?;
     let audit = RecordingAudit::default();
     let gatekeeper =
         gatekeep_axum::Gatekeeper::new(resolver, audit.clone()).with_clock(move || now);
-    let policy = gatekeep::policy::grant((), gatekeep::condition::has::<PaidPlan>());
+    let policy = policy::grant((), condition::has::<PaidPlan>());
 
     let authorized = gatekeeper
         .authorize(
@@ -66,7 +68,7 @@ async fn gatekeeper_uses_application_clock_for_keepsake_observation() -> TestRes
             context("tenant_1", principal)?,
         )
         .await
-        .map_err(|error| std::io::Error::other(format!("authorization failed: {error:?}")))?;
+        .map_err(|error| io::Error::other(format!("authorization failed: {error:?}")))?;
 
     assert_eq!(authorized.outcome, ());
     let entries = audit.entries()?;

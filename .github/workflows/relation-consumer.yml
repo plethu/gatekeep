@@ -1,0 +1,66 @@
+name: relation consumer
+
+on:
+  workflow_call:
+    inputs:
+      keepsake_ref:
+        description: Reviewed Keepsake 6 commit
+        required: true
+        type: string
+      carrier_ref:
+        description: Reviewed Dovecote 0.2.2 commit
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      keepsake_ref:
+        description: Committed matching Keepsake 6 revision (full SHA recommended)
+        required: true
+        type: string
+      carrier_ref:
+        description: Committed matching Dovecote 0.2.2 revision (full SHA recommended)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: fixture
+          POSTGRES_DB: relation_consumer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d relation_consumer"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: gatekeep-rs
+      - uses: actions/checkout@v6
+        with:
+          repository: plethu/keepsake
+          ref: ${{ inputs.keepsake_ref }}
+          path: keepsake-rs
+      - uses: actions/checkout@v6
+        with:
+          repository: plethu/dovecote
+          ref: ${{ inputs.carrier_ref }}
+          path: carrier
+      - uses: jdx/mise-action@v4
+        with:
+          working_directory: gatekeep-rs
+      - name: Verify caller-owned relation transactions
+        working-directory: gatekeep-rs
+        env:
+          DATABASE_URL: postgres://fixture:fixture@localhost:5432/relation_consumer
+        run: mise exec -- scripts/check-relation-consumer.sh --live

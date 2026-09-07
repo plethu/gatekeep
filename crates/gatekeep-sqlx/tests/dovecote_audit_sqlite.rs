@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Database integration evidence for the public SQL adapter.
 #![cfg(feature = "sqlite-tests")]
 
 use std::collections::BTreeMap;
@@ -358,9 +358,14 @@ async fn database() -> Result<SqlitePool, TestError> {
         .max_connections(1)
         .connect("sqlite::memory:")
         .await?;
-    raw_sql(dovecote_sqlx_sqlite::MIGRATIONS[0].sql())
-        .execute(&pool)
-        .await?;
+    raw_sql(
+        dovecote_sqlx_sqlite::MIGRATIONS
+            .first()
+            .ok_or(TestError::MissingMigration)?
+            .sql(),
+    )
+    .execute(&pool)
+    .await?;
     Ok(pool)
 }
 
@@ -446,6 +451,8 @@ fn audit_entry_for_tenant(tenant_name: &str) -> Result<AuditEntry, GatekeepError
 
 #[derive(Debug, thiserror::Error)]
 enum TestError {
+    #[error("fixture migration is missing")]
+    MissingMigration,
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),
     #[error(transparent)]

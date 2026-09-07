@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{convert::identity, fmt::Debug};
 
 use serde::{Deserialize, Serialize};
 
@@ -252,7 +252,7 @@ impl<O> ResidualPolicy<O> {
             | ResidualPolicyNode::Deny
             | ResidualPolicyNode::DenyWithTrace { .. } => false,
             ResidualPolicyNode::All { arms, .. } | ResidualPolicyNode::Any { arms, .. } => {
-                arms.into_iter().any(std::convert::identity)
+                arms.into_iter().any(identity)
             }
             ResidualPolicyNode::OrElse {
                 primary, fallback, ..

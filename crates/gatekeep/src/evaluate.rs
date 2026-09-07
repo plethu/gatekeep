@@ -276,55 +276,88 @@ struct GrantRef<'a, O> {
     reason: &'a Option<ReasonCode>,
 }
 
+/// A permit keeps its trace and obligations attached while lattice outcomes combine.
+struct Permit<O> {
+    outcome: O,
+    obligations: Vec<ObligationId>,
+    decisive: DecisiveClause<O>,
+}
+
+impl<O: Lattice> Permit<O> {
+    fn meet(self, incoming: Self) -> Self {
+        let outcome = self.outcome.meet(&incoming.outcome);
+        if outcome == self.outcome {
+            self
+        } else if outcome == incoming.outcome {
+            incoming
+        } else {
+            Self::combined(outcome, Vec::new())
+        }
+    }
+
+    fn join(mut self, incoming: Self) -> Self {
+        let outcome = self.outcome.join(&incoming.outcome);
+        if outcome == self.outcome && outcome == incoming.outcome {
+            union_obligations(&mut self.obligations, incoming.obligations);
+            return self;
+        }
+
+        if outcome == incoming.outcome {
+            return incoming;
+        }
+
+        if outcome == self.outcome {
+            return self;
+        }
+        union_obligations(&mut self.obligations, incoming.obligations);
+        Self::combined(outcome, self.obligations)
+    }
+
+    fn combined(outcome: O, obligations: Vec<ObligationId>) -> Self {
+        Self {
+            decisive: DecisiveClause::Permit {
+                granted: outcome.clone(),
+                satisfied: Vec::new(),
+                label: None,
+            },
+            outcome,
+            obligations,
+        }
+    }
+
+    fn into_result(self) -> EvalResult<O> {
+        EvalResult {
+            effect: Effect::Permit(self.outcome),
+            obligations: self.obligations,
+            decisive: self.decisive,
+        }
+    }
+}
+
 fn eval_all_by<O: Lattice, P>(
     policies: &[P],
     facts: &KnownFacts,
     consulted: &mut Consulted,
     mut eval_arm: impl FnMut(&P, &KnownFacts, &mut Consulted) -> EvalResult<O>,
 ) -> EvalResult<O> {
-    if policies.is_empty() {
-        return generic_deny();
-    }
-
-    let mut permit: Option<(O, Vec<ObligationId>, DecisiveClause<O>)> = None;
+    let mut permit: Option<Permit<O>> = None;
     for policy in policies {
         let arm = eval_arm(policy, facts, consulted);
-        match arm.effect {
-            Effect::Deny => return arm,
-            Effect::Permit(outcome) => {
-                permit = Some(match permit {
-                    None => (outcome, arm.obligations, arm.decisive),
-                    Some((current, current_obligations, decisive)) => {
-                        let met = current.meet(&outcome);
-                        if met == outcome && met != current {
-                            (met, arm.obligations, arm.decisive)
-                        } else if met != current {
-                            (
-                                met.clone(),
-                                Vec::new(),
-                                DecisiveClause::Permit {
-                                    granted: met,
-                                    satisfied: Vec::new(),
-                                    label: None,
-                                },
-                            )
-                        } else {
-                            (met, current_obligations, decisive)
-                        }
-                    }
-                });
-            }
-        }
-    }
+        let Effect::Permit(outcome) = arm.effect else {
+            return arm;
+        };
 
-    let Some((outcome, obligations, decisive)) = permit else {
-        return generic_deny();
-    };
-    EvalResult {
-        effect: Effect::Permit(outcome),
-        obligations,
-        decisive,
+        let incoming = Permit {
+            outcome,
+            obligations: arm.obligations,
+            decisive: arm.decisive,
+        };
+        permit = Some(match permit {
+            None => incoming,
+            Some(current) => current.meet(incoming),
+        });
     }
+    permit.map_or_else(generic_deny, Permit::into_result)
 }
 
 fn eval_any_by<O: Lattice, P>(
@@ -333,71 +366,33 @@ fn eval_any_by<O: Lattice, P>(
     consulted: &mut Consulted,
     mut eval_arm: impl FnMut(&P, &KnownFacts, &mut Consulted) -> EvalResult<O>,
 ) -> EvalResult<O> {
-    if policies.is_empty() {
-        return generic_deny();
-    }
-
-    let mut winning: Option<(O, DecisiveClause<O>)> = None;
-    let mut winning_obligations = Vec::<ObligationId>::new();
+    let mut winning: Option<Permit<O>> = None;
     let mut first_deny = None;
-
     for policy in policies {
         let arm = eval_arm(policy, facts, consulted);
-        match arm.effect {
-            Effect::Deny => {
-                if first_deny.is_none() {
-                    first_deny = Some(arm.decisive);
-                }
-            }
-            Effect::Permit(outcome) => match &mut winning {
-                None => {
-                    winning = Some((outcome, arm.decisive));
-                    winning_obligations = arm.obligations;
-                }
-                Some((current, _decisive)) => {
-                    let joined = current.join(&outcome);
-                    match (joined == *current, joined == outcome) {
-                        (true, true) => {
-                            union_obligations(&mut winning_obligations, arm.obligations);
-                        }
-                        (false, true) => {
-                            *current = joined;
-                            winning_obligations = arm.obligations;
-                            if let Some((_, decisive)) = &mut winning {
-                                *decisive = arm.decisive;
-                            }
-                        }
-                        (false, false) => {
-                            *current = joined.clone();
-                            union_obligations(&mut winning_obligations, arm.obligations);
-                            if let Some((_, decisive)) = &mut winning {
-                                *decisive = DecisiveClause::Permit {
-                                    granted: joined,
-                                    satisfied: Vec::new(),
-                                    label: None,
-                                };
-                            }
-                        }
-                        (true, false) => {}
-                    }
-                }
-            },
-        }
-    }
+        let Effect::Permit(outcome) = arm.effect else {
+            first_deny.get_or_insert(arm.decisive);
+            continue;
+        };
 
-    if let Some((outcome, decisive)) = winning {
-        EvalResult {
-            effect: Effect::Permit(outcome),
-            obligations: winning_obligations,
-            decisive,
-        }
-    } else {
-        EvalResult {
+        let incoming = Permit {
+            outcome,
+            obligations: arm.obligations,
+            decisive: arm.decisive,
+        };
+        winning = Some(match winning {
+            None => incoming,
+            Some(current) => current.join(incoming),
+        });
+    }
+    winning.map_or_else(
+        || EvalResult {
             effect: Effect::Deny,
             obligations: Vec::new(),
             decisive: first_deny.unwrap_or_else(|| generic_deny::<O>().decisive),
-        }
-    }
+        },
+        Permit::into_result,
+    )
 }
 
 fn eval_condition(

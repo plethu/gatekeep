@@ -1,5 +1,6 @@
 //! Test support for keepsake resolver integration tests.
 
+use std::error::Error as StdError;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -18,7 +19,7 @@ use keepsake::{
 };
 use thiserror::Error;
 
-pub type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
+pub type TestResult<T> = Result<T, Box<dyn StdError>>;
 
 pub struct PaidPlan;
 
@@ -252,6 +253,6 @@ pub fn tenant_subject(
     )
 }
 
-const fn fixed_time() -> time::OffsetDateTime {
+pub const fn fixed_time() -> time::OffsetDateTime {
     time::macros::datetime!(2026-01-01 0:00 UTC)
 }

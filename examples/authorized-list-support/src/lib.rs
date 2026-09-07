@@ -64,8 +64,10 @@ pub fn request_context() -> Result<Context, BuildError> {
             now,
             EvidenceDigest::new([0; 32]),
         ),
-        now - time::Duration::minutes(1),
-        now + time::Duration::hours(1),
+        now.checked_sub(time::Duration::minutes(1))
+            .ok_or(BuildError::ClockOutOfRange)?,
+        now.checked_add(time::Duration::hours(1))
+            .ok_or(BuildError::ClockOutOfRange)?,
     )?;
     Ok(Context::new_at(
         tenant,
@@ -170,7 +172,7 @@ where
         }
     };
 
-    let bind_count = lowered.grade.binds().count() + lowered.filter.binds().count();
+    let bind_count = lowered.grade.binds().chain(lowered.filter.binds()).count();
     let mut builder = QueryBuilder::<Postgres>::new("SELECT cases.id, cases.title, ");
     lowered.grade.push_to(&mut builder);
     builder.push(" AS access_grade FROM cases WHERE ");
@@ -348,6 +350,9 @@ impl<E> IntoResponse for AppError<E> {
 /// Error returned while constructing the example router.
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
+    /// The system clock cannot represent the example binding window.
+    #[error("system clock is outside the supported binding range")]
+    ClockOutOfRange,
     /// Gatekeep rejected a static identifier.
     #[error(transparent)]
     Gatekeep(#[from] GatekeepError),

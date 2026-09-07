@@ -5,6 +5,15 @@ use thiserror::Error;
 /// Backend error emitted by [`crate::KeepsakeResolver`].
 #[derive(Debug, Error)]
 pub enum KeepsakeResolveError<E> {
+    /// Gatekeep rejected the resolver source provenance.
+    #[error(transparent)]
+    Provenance(#[from] gatekeep::TenantBindingError),
+    /// The source returned facts outside the requested scope.
+    #[error("keepsake source returned a mismatched scope")]
+    ScopeMismatch,
+    /// Effective state cannot be established from the supplied evidence.
+    #[error(transparent)]
+    Effective(#[from] keepsake::EffectiveRelationError),
     /// Gatekeep and keepsake subject validation drifted apart.
     #[error(transparent)]
     Subject(#[from] KeepsakeError),

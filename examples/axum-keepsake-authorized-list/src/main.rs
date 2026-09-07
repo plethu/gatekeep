@@ -8,13 +8,15 @@ use keepsake::{
     ExpiryPolicy, InMemoryActiveRelations, InMemoryActiveRelationsError, KeepsakeError,
     relation_spec,
 };
+use std::io;
+use tokio::{net::TcpListener, runtime::Runtime};
 
 type Resolver = KeepsakeResolver<InMemoryActiveRelations>;
 
 fn main() -> Result<(), BuildError> {
-    let runtime = tokio::runtime::Runtime::new()?;
+    let runtime = Runtime::new()?;
     runtime.block_on(async {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:3001").await?;
+        let listener = TcpListener::bind("127.0.0.1:3001").await?;
         let address = listener.local_addr()?;
         eprintln!("listening on http://{address}");
         axum::serve(listener, router(resolver_with_staff()?)?).await?;
@@ -85,7 +87,7 @@ enum BuildError {
     #[error(transparent)]
     InMemory(#[from] InMemoryActiveRelationsError),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
     Keepsake(#[from] KeepsakeError),
     #[error(transparent)]
@@ -94,10 +96,12 @@ enum BuildError {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Error as HttpError;
     use axum::{
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
+    use gatekeep_axum::test_support::DenialAssertError;
     use gatekeep_axum::test_support::{ExpectedDenial, assert_denial_response};
     use gatekeep_example_authorized_list_support::{
         AuthorizedList, EXPECTED_LIST_BINDS, EXPECTED_LIST_SQL,
@@ -157,11 +161,11 @@ mod tests {
         #[error(transparent)]
         Build(#[from] BuildError),
         #[error(transparent)]
-        Http(#[from] axum::http::Error),
+        Http(#[from] HttpError),
         #[error(transparent)]
         Json(#[from] serde_json::Error),
         #[error(transparent)]
-        Denial(#[from] gatekeep_axum::test_support::DenialAssertError),
+        Denial(#[from] DenialAssertError),
         #[error(transparent)]
         Router(#[from] gatekeep_example_authorized_list_support::BuildError),
     }

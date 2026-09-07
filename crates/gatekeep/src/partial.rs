@@ -218,9 +218,7 @@ fn reduce_any<O: Lattice>(policies: &[Policy<O>], facts: &PartialFacts) -> Reduc
                 match decision.effect {
                     Effect::Permit(_) => resolved_permits.push(policy_from_decision(decision)),
                     Effect::Deny => {
-                        if first_resolved_deny.is_none() {
-                            first_resolved_deny = Some(decision);
-                        }
+                        first_resolved_deny.get_or_insert(decision);
                     }
                 }
             }

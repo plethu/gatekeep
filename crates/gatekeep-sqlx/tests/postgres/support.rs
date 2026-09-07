@@ -8,6 +8,8 @@ use gatekeep_sqlx::{
     validate_database_url_for_backend,
 };
 use sqlx::{PgPool, Postgres, QueryBuilder, postgres::PgPoolOptions};
+use std::cmp;
+use std::env;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum Tier {
@@ -18,11 +20,11 @@ pub enum Tier {
 
 impl Lattice for Tier {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {
@@ -181,7 +183,7 @@ pub const fn cases() -> [Case; 6] {
 }
 
 pub async fn pool() -> TestResult<PgPool> {
-    let database_url = std::env::var("DATABASE_URL")?;
+    let database_url = env::var("DATABASE_URL")?;
     validate_database_url_for_backend::<PostgresBackend>(&database_url)?;
     Ok(PgPoolOptions::new()
         .max_connections(1)
@@ -290,12 +292,12 @@ const fn presence(value: bool) -> Presence {
     }
 }
 
-pub type TestResult<T> = core::result::Result<T, TestError>;
+pub type TestResult<T> = Result<T, TestError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TestError {
     #[error(transparent)]
-    Env(#[from] std::env::VarError),
+    Env(#[from] env::VarError),
     #[error(transparent)]
     Driver(#[from] gatekeep_sqlx::SqlxDriverError),
     #[error(transparent)]

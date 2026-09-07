@@ -42,3 +42,9 @@ jobs:
       - name: Stop database services
         if: always()
         run: mise exec -- just db-down
+
+  relation-consumer:
+    uses: ./.github/workflows/relation-consumer.yml
+    with:
+      keepsake_ref: fe87616ad4661bd17981b64eeb680e11f2191f83
+      carrier_ref: 5a1803935c868359e3e41d783bc29dd9ab1c0212

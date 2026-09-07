@@ -1,5 +1,31 @@
 # Changelog
 
+## gatekeep-keepsake 5.0.0 — 2026-09-07 release candidate
+
+- Uses Keepsake 6.0 for effective relation state at the supplied observation time.
+  Timed restrictions become absent at their deadline without waiting for a worker.
+- Adds scoped effective snapshots, including scope-checked absence, and typed
+  unavailable-time, missing-evidence and scope errors. Cached resolver results
+  remain unsuitable for protecting a database write from concurrent changes.
+- Resolver provenance now bounds reusable facts by their known expiry deadline.
+- Adds the executable [caller-owned transaction consumer](examples/relation-lifecycle/README.md).
+  The durable audit schema and all published migration bytes remain unchanged.
+
+## gatekeep 4.0.1 and gatekeep-sqlx 4.0.1 — 2026-09-07 release candidates
+
+- `gatekeep`: static identifiers now reject Unicode-only whitespace consistently
+  with owned identifiers; static tenant identities also reject C1 controls.
+- `gatekeep-sqlx`: malformed database URL diagnostics no longer copy arbitrary
+  credential-like prefixes as an unsupported scheme. Unsupported scheme text is
+  retained only for a valid explicit `scheme://` URL; ambiguous `prefix:value`
+  input is redacted. Supported backend aliases retain their existing behavior.
+- Private module ownership and lattice permit accumulation are clearer without
+  changing public paths, policy hashes, traces or durable audit encoding.
+- Enforce the selected stricter Clippy profile, production arithmetic and panic
+  checks, strict rustdoc, TOML formatting, spelling and dependency ownership from
+  the canonical gate. Compatibility and test-scope decisions are recorded in
+  [the maintainability contract](docs/maintainability.md).
+
 All notable changes to this project are documented here.
 
 ## [4.0.0] - 2026-09-01

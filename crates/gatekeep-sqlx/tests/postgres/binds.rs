@@ -7,6 +7,7 @@ use sqlx::{
 };
 
 use crate::support::{TestError, TestResult, pool, push_typed_bind};
+use sqlx::types::time::OffsetDateTime;
 
 #[tokio::test]
 #[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
@@ -44,7 +45,7 @@ async fn common_postgres_bind_values_round_trip() -> TestResult<()> {
             Date,
             Time,
             PrimitiveDateTime,
-            sqlx::types::time::OffsetDateTime,
+            OffsetDateTime,
         )>()
         .fetch_one(&pool)
         .await?;

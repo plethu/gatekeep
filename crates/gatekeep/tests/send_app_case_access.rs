@@ -5,6 +5,7 @@ use gatekeep::{
     Policy, Residual, StaticFactId, StaticObligationId, complete_residual, condition, evaluate,
     partial_evaluate, policy, required_residual_facts,
 };
+use std::cmp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 enum ReadTier {
@@ -15,11 +16,11 @@ enum ReadTier {
 
 impl Lattice for ReadTier {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {

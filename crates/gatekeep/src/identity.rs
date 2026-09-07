@@ -1,3 +1,4 @@
+use serde::de::Error as SerdeError;
 use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -95,7 +96,7 @@ fn validate_tenant_id(value: impl Into<String>) -> GatekeepResult<String> {
     }
 
     for character in value.chars() {
-        let code_point = character as u32;
+        let code_point = u32::from(character);
         if character.is_control() {
             return Err(GatekeepError::TenantIdControlCharacter { code_point });
         }
@@ -141,11 +142,6 @@ macro_rules! owned_id {
                 validate_identifier($field, value).map(Self)
             }
 
-            #[allow(dead_code)]
-            pub(crate) fn from_trusted(value: impl Into<String>) -> Self {
-                Self(value.into())
-            }
-
             /// Returns the identifier as a string slice.
             #[must_use]
             pub fn as_str(&self) -> &str {
@@ -174,11 +170,27 @@ macro_rules! owned_id {
                 D: Deserializer<'de>,
             {
                 let value = String::deserialize(deserializer)?;
-                Self::new(value).map_err(serde::de::Error::custom)
+                Self::new(value).map_err(SerdeError::custom)
             }
         }
     };
 }
+
+// Only identities constructed internally from already validated static values
+// or generated digests need a trusted path. Other identities use validation.
+macro_rules! trusted_id {
+    ($name:ident) => {
+        impl $name {
+            pub(crate) fn from_trusted(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+        }
+    };
+}
+trusted_id!(FactId);
+trusted_id!(ObligationId);
+trusted_id!(PolicyHash);
+trusted_id!(DecisionAuditId);
 
 macro_rules! static_id {
     ($name:ident, $owned:ident, $validator:path) => {
@@ -217,16 +229,24 @@ macro_rules! static_id {
 }
 
 const fn assert_valid_static_id(value: &str) {
-    let bytes = value.as_bytes();
-    assert!(!bytes.is_empty(), "static identity must not be empty");
-    let mut index = 0;
+    let mut remaining = value.as_bytes();
+    assert!(!remaining.is_empty(), "static identity must not be empty");
     let mut has_non_whitespace = false;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if !(byte == b' ' || byte == b'\n' || byte == b'\r' || byte == b'\t') {
-            has_non_whitespace = true;
-        }
-        index += 1;
+    // Rust's Unicode White_Space scalars, matched as UTF-8 prefixes because
+    // str::trim and str::chars are not const on the supported compiler.
+    while !remaining.is_empty() {
+        remaining = match remaining {
+            [b' ' | 0x09..=0x0D, rest @ ..]
+            | [0xC2, 0x85 | 0xA0, rest @ ..]
+            | [0xE1, 0x9A, 0x80, rest @ ..]
+            | [0xE2, 0x80, 0x80..=0x8A | 0xA8 | 0xA9 | 0xAF, rest @ ..]
+            | [0xE2, 0x81, 0x9F, rest @ ..]
+            | [0xE3, 0x80, 0x80, rest @ ..] => rest,
+            _ => {
+                has_non_whitespace = true;
+                break;
+            }
+        };
     }
     assert!(has_non_whitespace, "static identity must not be whitespace");
 }
@@ -237,41 +257,25 @@ const fn assert_valid_static_tenant_id(value: &str) {
         value.len() <= MAX_TENANT_ID_BYTES,
         "static tenant identity exceeds 255 UTF-8 bytes"
     );
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        let first = bytes[index];
-        let (code_point, width) = match first {
-            0x00..=0x7F => (first as u32, 1),
-            0x80..=0xDF => {
-                let code_point = ((first & 0x1F) as u32) << 6 | (bytes[index + 1] & 0x3F) as u32;
-                (code_point, 2)
-            }
-            0xE0..=0xEF => {
-                let code_point = ((first & 0x0F) as u32) << 12
-                    | ((bytes[index + 1] & 0x3F) as u32) << 6
-                    | (bytes[index + 2] & 0x3F) as u32;
-                (code_point, 3)
-            }
-            _ => {
-                let code_point = ((first & 0x07) as u32) << 18
-                    | ((bytes[index + 1] & 0x3F) as u32) << 12
-                    | ((bytes[index + 2] & 0x3F) as u32) << 6
-                    | (bytes[index + 3] & 0x3F) as u32;
-                (code_point, 4)
-            }
-        };
+    // The input is already valid UTF-8. Match only the forbidden scalar byte
+    // sequences rather than maintaining a second general UTF-8 decoder.
+    let mut remaining = value.as_bytes();
+    while let [first, rest @ ..] = remaining {
+        let control =
+            matches!(first, 0x00..=0x1F | 0x7F) || matches!(remaining, [0xC2, 0x80..=0x9F, ..]);
         assert!(
-            !(code_point <= 0x1F || code_point == 0x7F),
+            !control,
             "static tenant identity contains a control character"
         );
+        let noncharacter = matches!(
+            remaining,
+            [0xEF, 0xB7, 0x90..=0xAF, ..] | [0xEF, 0xBF, 0xBE | 0xBF, ..]
+        ) || matches!(remaining, [0xF0..=0xF4, second, 0xBF, 0xBE | 0xBF, ..] if *second & 0x0F == 0x0F);
         assert!(
-            !((code_point >= 0xFDD0 && code_point <= 0xFDEF)
-                || code_point & 0xFFFF == 0xFFFF
-                || code_point & 0xFFFF == 0xFFFE),
+            !noncharacter,
             "static tenant identity contains a Unicode noncharacter"
         );
-        index += width;
+        remaining = rest;
     }
 }
 
@@ -298,11 +302,6 @@ impl TenantId {
     /// tenant value.
     pub fn new(value: impl Into<String>) -> GatekeepResult<Self> {
         validate_tenant_id(value).map(Self)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn from_trusted(value: impl Into<String>) -> Self {
-        Self(value.into())
     }
 
     /// Returns the tenant identifier as a string slice.
@@ -333,7 +332,7 @@ impl<'de> Deserialize<'de> for TenantId {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        Self::new(value).map_err(SerdeError::custom)
     }
 }
 
@@ -412,7 +411,9 @@ impl DecisionAuditOccurrence {
         }
 
         let nanosecond = occurred_at.nanosecond();
-        let normalized_nanosecond = nanosecond - (nanosecond % 1_000);
+        let normalized_nanosecond = nanosecond
+            .checked_sub(nanosecond % 1_000)
+            .ok_or(DecisionAuditOccurrenceError::OutOfRange)?;
         if seconds == MAX_PORTABLE_UNIX_SECONDS && normalized_nanosecond > 999_999_000 {
             return Err(DecisionAuditOccurrenceError::OutOfRange);
         }
@@ -482,7 +483,7 @@ impl<'de> Deserialize<'de> for DecisionAuditOccurrence {
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.decision_audit_id, wire.occurred_at).map_err(serde::de::Error::custom)
+        Self::new(wire.decision_audit_id, wire.occurred_at).map_err(SerdeError::custom)
     }
 }
 
@@ -547,7 +548,7 @@ impl<'de> Deserialize<'de> for Locale {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        Self::new(value).map_err(SerdeError::custom)
     }
 }
 
@@ -611,6 +612,6 @@ impl<'de> Deserialize<'de> for SubjectRef {
         }
 
         let record = SubjectRefRecord::deserialize(deserializer)?;
-        Self::new(record.kind, record.id).map_err(serde::de::Error::custom)
+        Self::new(record.kind, record.id).map_err(SerdeError::custom)
     }
 }

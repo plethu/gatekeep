@@ -1,3 +1,4 @@
+use serde::de::Error as SerdeError;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -144,7 +145,7 @@ impl<'de> Deserialize<'de> for KnownFacts {
         let facts = Facts::deserialize(deserializer)?;
         for (_fact, presence) in facts.iter() {
             if presence == Presence::Unknown {
-                return Err(serde::de::Error::custom(
+                return Err(SerdeError::custom(
                     "known facts cannot contain unknown presence",
                 ));
             }

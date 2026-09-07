@@ -1,1 +1,4 @@
-excessive-nesting-threshold = 5
+excessive-nesting-threshold = 4
+absolute-paths-max-segments = 2
+# New bounds checks apply to production; indexed test assertions remain readable.
+allow-indexing-slicing-in-tests = true

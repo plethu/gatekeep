@@ -702,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep"
-version = "4.0.0"
+version = "4.0.1"
 dependencies = [
  "async-trait",
  "blake3",
@@ -759,7 +759,6 @@ dependencies = [
  "gatekeep-example-authorized-list-support",
  "serde_json",
  "thiserror",
- "time",
  "tokio",
  "tower",
 ]
@@ -773,7 +772,6 @@ dependencies = [
  "gatekeep-axum",
  "gatekeep-sqlx",
  "sqlx",
- "time",
  "tokio",
 ]
 
@@ -807,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-keepsake"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "async-trait",
  "gatekeep",
@@ -828,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "gatekeep-sqlx"
-version = "4.0.0"
+version = "4.0.1"
 dependencies = [
  "async-trait",
  "dovecote",
@@ -1175,9 +1173,9 @@ dependencies = [
 
 [[package]]
 name = "keepsake"
-version = "4.0.0"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2defa28c86ff8a63ce2c76549ad8f9898522cdb18a7902d8e96d0e7cf2ceafc7"
+checksum = "22773a0b46bf423d9fdf674b9d68d9b80c3f6dd7a9cf7ea5eed900117583989c"
 dependencies = [
  "serde",
  "thiserror",

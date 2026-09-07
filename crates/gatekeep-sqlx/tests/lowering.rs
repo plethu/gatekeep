@@ -26,6 +26,7 @@ use sqlx::{
         time::{Date, PrimitiveDateTime, Time},
     },
 };
+use std::cmp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 enum Tier {
@@ -36,11 +37,11 @@ enum Tier {
 
 impl Lattice for Tier {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {
@@ -377,6 +378,12 @@ fn database_url_driver_inference_matches_enabled_sqlx_features() -> Result<(), T
         SqlxDriver::MySql
     );
 
+    #[cfg(feature = "mysql")]
+    assert_eq!(
+        infer_enabled_driver_from_url("mariadb://gatekeep@localhost/db")?,
+        SqlxDriver::MySql
+    );
+
     let Err(error) = infer_enabled_driver_from_url("file:///tmp/gatekeep.db") else {
         return Err(TestError::ExpectedDriverError);
     };
@@ -700,4 +707,42 @@ const fn presence(value: bool) -> Presence {
     } else {
         Presence::Absent
     }
+}
+
+#[test]
+fn malformed_database_url_diagnostics_do_not_copy_credentials() -> Result<(), TestError> {
+    for private in [
+        "opaque-user@private-host:opaque-password",
+        "secret-token:password@host",
+        "secret-token:password",
+    ] {
+        let Err(error) = infer_enabled_driver_from_url(private) else {
+            return Err(TestError::ExpectedDriverError);
+        };
+
+        assert_eq!(
+            error,
+            gatekeep_sqlx::SqlxDriverError::UnsupportedUrlScheme { scheme: None }
+        );
+        let diagnostic = format!("{error:?} {error}");
+        assert!(!diagnostic.contains("opaque"));
+        assert!(!diagnostic.contains("secret-token"));
+        assert!(!diagnostic.contains("password"));
+    }
+    Ok(())
+}
+
+#[test]
+fn unsupported_valid_scheme_preserves_authored_case() -> Result<(), TestError> {
+    let Err(error) = infer_enabled_driver_from_url("FILE:///private-fixture") else {
+        return Err(TestError::ExpectedDriverError);
+    };
+
+    assert_eq!(
+        error,
+        gatekeep_sqlx::SqlxDriverError::UnsupportedUrlScheme {
+            scheme: Some("FILE".to_owned())
+        }
+    );
+    Ok(())
 }

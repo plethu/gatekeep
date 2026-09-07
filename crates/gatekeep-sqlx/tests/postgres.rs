@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Database integration evidence for the public SQL adapter.
 #![cfg(feature = "postgres-tests")]
 //! Docker-backed Postgres tests.
 

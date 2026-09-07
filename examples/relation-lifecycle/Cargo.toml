@@ -1,0 +1,66 @@
+[package]
+name = "relation-lifecycle-consumer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[dependencies]
+keepsake = { path = "../../../keepsake-rs/crates/keepsake", version = "6.0.0" }
+keepsake-sqlx = { path = "../../../keepsake-rs/crates/keepsake-sqlx", version = "6.0.0", default-features = false, features = [
+  "postgres",
+  "migrations",
+] }
+gatekeep = { path = "../../crates/gatekeep", version = "4.0.0" }
+gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "5.0.0" }
+gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "4.0.0", default-features = false, features = [
+  "postgres",
+] }
+dovecote = "0.2.1"
+dovecote-sqlx-postgres = "0.2.1"
+serde_json = "1"
+sqlx = { version = "0.9", default-features = false, features = [
+  "runtime-tokio",
+  "tls-rustls",
+  "postgres",
+  "uuid",
+  "time",
+] }
+time = "0.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[patch.crates-io]
+keepsake = { path = "../../../keepsake-rs/crates/keepsake" }
+dovecote = { path = "../../../carrier/crates/dovecote" }
+dovecote-sqlx-postgres = { path = "../../../carrier/crates/dovecote-sqlx-postgres" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unfulfilled_lint_expectations = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+dbg_macro = "deny"
+unimplemented = "deny"
+missing_errors_doc = "deny"
+multiple_crate_versions = "allow"
+unreachable = "deny"
+exit = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+unchecked_time_subtraction = "deny"
+as_conversions = "deny"
+absolute_paths = "deny"
+allow_attributes_without_reason = "deny"
+excessive_nesting = "deny"

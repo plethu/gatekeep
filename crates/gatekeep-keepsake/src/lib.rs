@@ -9,12 +9,14 @@
 #![forbid(unsafe_code)]
 
 mod binding;
+mod effective;
 mod error;
 mod resolver;
 mod subject;
 mod target;
 
 pub use binding::{FactBinding, FactBindingError, QueryPresence};
+pub use effective::EffectiveFactError;
 pub use error::{KeepsakeResolveError, KeepsakeTargetError};
 #[cfg(feature = "in-memory")]
 pub use keepsake::{ActiveRelationSeed, InMemoryActiveRelations, InMemoryActiveRelationsError};

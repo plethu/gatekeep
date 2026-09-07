@@ -4,6 +4,7 @@ use gatekeep::{
     DecisionAuditId, DecisionAuditOccurrence, DecisionAuditOccurrenceError, GatekeepError,
     SubjectRef,
 };
+use std::error::Error as StdError;
 
 #[test]
 fn generated_decision_audit_ids_are_valid_and_distinct() {
@@ -49,8 +50,7 @@ fn decision_audit_id_deserialization_uses_reserved_prefix_validation() {
 }
 
 #[test]
-fn decision_occurrence_normalizes_utc_at_microsecond_precision()
--> Result<(), Box<dyn std::error::Error>> {
+fn decision_occurrence_normalizes_utc_at_microsecond_precision() -> Result<(), Box<dyn StdError>> {
     let id = DecisionAuditId::new("decision-1")?;
     let at = time::OffsetDateTime::from_unix_timestamp_nanos(123_000)?
         .to_offset(time::UtcOffset::from_hms(2, 0, 0)?);
@@ -67,7 +67,7 @@ fn decision_occurrence_normalizes_utc_at_microsecond_precision()
 
 #[test]
 fn decision_occurrence_normalizes_submicroseconds_and_rejects_invalid_endpoints()
--> Result<(), Box<dyn std::error::Error>> {
+-> Result<(), Box<dyn StdError>> {
     let id = DecisionAuditId::new("decision-1")?;
     let submicrosecond = time::OffsetDateTime::from_unix_timestamp_nanos(1)?;
     let normalized = DecisionAuditOccurrence::new(id.clone(), submicrosecond)?;
@@ -93,7 +93,7 @@ fn decision_occurrence_normalizes_submicroseconds_and_rejects_invalid_endpoints(
 
 #[test]
 fn decision_occurrence_deserialization_reestablishes_constructor_invariants()
--> Result<(), Box<dyn std::error::Error>> {
+-> Result<(), Box<dyn StdError>> {
     let submicrosecond = time::OffsetDateTime::UNIX_EPOCH + time::Duration::nanoseconds(1_234);
     let normalized: DecisionAuditOccurrence = serde_json::from_value(serde_json::json!({
         "decision_audit_id": "decision-serde",

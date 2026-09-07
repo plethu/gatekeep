@@ -1,5 +1,8 @@
+use std::env;
 use std::error::Error;
 use std::sync::OnceLock;
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
 
 use dovecote::{
     ContentType, EventData, EventId, EventSource, EventType, Limit, NewEvent, StreamName,
@@ -13,13 +16,10 @@ mod audit_support;
 
 type TestResult<T> = Result<T, Box<dyn Error>>;
 
-static TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-async fn serialize_live_test() -> tokio::sync::MutexGuard<'static, ()> {
-    TEST_LOCK
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
+async fn serialize_live_test() -> MutexGuard<'static, ()> {
+    TEST_LOCK.get_or_init(|| Mutex::new(())).lock().await
 }
 
 #[tokio::test]
@@ -194,7 +194,7 @@ struct AuditEventRow {
 }
 
 async fn pool() -> Result<MySqlPool, Box<dyn Error>> {
-    let database_url = std::env::var("MYSQL_DATABASE_URL")?;
+    let database_url = env::var("MYSQL_DATABASE_URL")?;
     gatekeep_sqlx::validate_database_url_for_backend::<gatekeep_sqlx::MySqlBackend>(&database_url)?;
     Ok(MySqlPoolOptions::new()
         .max_connections(1)
@@ -225,8 +225,13 @@ async fn install_dovecote_schema(pool: &MySqlPool) -> Result<(), Box<dyn Error>>
     // MySQL trigger bodies contain semicolons. Send the complete release
     // artifact through SQLx's raw/unprepared multi-statement protocol so the
     // server, rather than a client-side splitter, parses the trigger bodies.
-    raw_sql(dovecote_sqlx_mysql::MIGRATIONS[0].sql())
-        .execute(pool)
-        .await?;
+    raw_sql(
+        dovecote_sqlx_mysql::MIGRATIONS
+            .first()
+            .ok_or("fixture migration is missing")?
+            .sql(),
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }

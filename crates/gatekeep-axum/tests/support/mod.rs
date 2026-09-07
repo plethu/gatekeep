@@ -1,5 +1,8 @@
 //! Test fixtures for gatekeep-axum integration tests.
 
+use axum::http::Error as HttpError;
+use gatekeep_axum::test_support::DenialAssertError;
+use std::cmp;
 use std::{
     collections::BTreeMap,
     convert::Infallible,
@@ -8,6 +11,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use time::error::ComponentRange;
+use tokio::task::JoinError;
 
 use async_trait::async_trait;
 use gatekeep::{
@@ -26,11 +31,11 @@ pub enum Access {
 
 impl Lattice for Access {
     fn meet(&self, other: &Self) -> Self {
-        std::cmp::min(*self, *other)
+        cmp::min(*self, *other)
     }
 
     fn join(&self, other: &Self) -> Self {
-        std::cmp::max(*self, *other)
+        cmp::max(*self, *other)
     }
 
     fn top() -> Self {
@@ -269,17 +274,17 @@ pub enum TestError {
     #[error(transparent)]
     Occurrence(#[from] gatekeep::DecisionAuditOccurrenceError),
     #[error(transparent)]
-    Time(#[from] time::error::ComponentRange),
+    Time(#[from] ComponentRange),
     #[error(transparent)]
     Record(#[from] RecordingError),
     #[error(transparent)]
-    Http(#[from] axum::http::Error),
+    Http(#[from] HttpError),
     #[error(transparent)]
     Axum(#[from] axum::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    DenialAssert(#[from] gatekeep_axum::test_support::DenialAssertError),
+    DenialAssert(#[from] DenialAssertError),
     #[error("request was unexpectedly permitted")]
     UnexpectedPermit,
     #[error("request was expected to deny")]
@@ -289,11 +294,13 @@ pub enum TestError {
     #[error("audit release receiver was dropped")]
     AuditReleaseDropped,
     #[error(transparent)]
-    Join(#[from] tokio::task::JoinError),
+    Join(#[from] JoinError),
     #[error("authorization failed")]
     Authorization,
     #[error("audit failure did not return its occurrence")]
     MissingAuditOccurrence,
+    #[error("fixture requires an application tenant binding")]
+    ExpectedApplicationBinding,
 }
 
 impl From<GatekeepRejection<Infallible, RecordingError>> for TestError {

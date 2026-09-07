@@ -1,5 +1,8 @@
 //! Runnable axum example for authorized-list lowering with in-process facts.
 
+use std::io;
+use tokio::{net::TcpListener, runtime::Runtime};
+
 use async_trait::async_trait;
 use gatekeep::{
     BindingProvenance, Clock, Context, FactId, FactResolution, FactResolutionMetadata,
@@ -8,9 +11,9 @@ use gatekeep::{
 use gatekeep_example_authorized_list_support::{CaseOwner, SharedCase, Staff, router};
 
 fn main() -> Result<(), RunError> {
-    let runtime = tokio::runtime::Runtime::new()?;
+    let runtime = Runtime::new()?;
     runtime.block_on(async {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+        let listener = TcpListener::bind("127.0.0.1:3000").await?;
         let address = listener.local_addr()?;
         eprintln!("listening on http://{address}");
         axum::serve(listener, router(resolver_with_staff())?).await?;
@@ -21,7 +24,7 @@ fn main() -> Result<(), RunError> {
 #[derive(Debug, thiserror::Error)]
 enum RunError {
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
     Router(#[from] gatekeep_example_authorized_list_support::BuildError),
 }
@@ -97,10 +100,12 @@ impl FactResolver for StaticResolver {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::Error as HttpError;
     use axum::{
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
+    use gatekeep_axum::test_support::DenialAssertError;
     use gatekeep_axum::test_support::{ExpectedDenial, assert_denial_response};
     use gatekeep_example_authorized_list_support::{
         AuthorizedList, EXPECTED_LIST_BINDS, EXPECTED_LIST_SQL,
@@ -158,10 +163,10 @@ mod tests {
         #[error(transparent)]
         Build(#[from] gatekeep_example_authorized_list_support::BuildError),
         #[error(transparent)]
-        Http(#[from] axum::http::Error),
+        Http(#[from] HttpError),
         #[error(transparent)]
         Json(#[from] serde_json::Error),
         #[error(transparent)]
-        Denial(#[from] gatekeep_axum::test_support::DenialAssertError),
+        Denial(#[from] DenialAssertError),
     }
 }

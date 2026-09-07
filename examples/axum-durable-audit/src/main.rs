@@ -1,6 +1,8 @@
 //! Runnable, compile-checked setup for Axum authorization with durable audit.
 
+use std::error::Error as StdError;
 use std::{convert::Infallible, env};
+use tokio::runtime::Runtime;
 
 use async_trait::async_trait;
 use gatekeep::{
@@ -13,8 +15,8 @@ use sqlx::PgPool;
 
 type DurableGatekeeper = Gatekeeper<ApplicationFactResolver, PgDovecoteAudit>;
 
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let runtime = tokio::runtime::Runtime::new()?;
+fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
+    let runtime = Runtime::new()?;
     runtime.block_on(async {
         let database_url = env::var("DATABASE_URL")?;
         let pool = PgPool::connect(&database_url).await?;
@@ -25,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 async fn build_gatekeeper(
     pool: PgPool,
-) -> Result<DurableGatekeeper, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<DurableGatekeeper, Box<dyn StdError + Send + Sync>> {
     let audit = PgDovecoteAudit::new(pool, "https://auth.example.test/gatekeep")?;
     audit.check_schema().await?;
     Ok(Gatekeeper::new(ApplicationFactResolver, audit))

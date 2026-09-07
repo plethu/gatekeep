@@ -7,11 +7,14 @@ Usage:
   check-project-gates.sh [repo-root]
 
 Runs Gatekeep's canonical local project gates:
-  1. cargo fmt --all --check
+  1. Rust/TOML formatting, spelling and dependency ownership
   2. structural Rust checks
   3. cargo clippy --workspace --all-targets --all-features -- -D warnings
-  4. cargo deny advisory, ban, license, and source checks
-  5. cargo test --workspace --all-features
+  4. production-only arithmetic and Result panic restrictions
+  5. cargo deny advisory, ban, license, and source checks
+  6. cargo test --workspace --all-features
+  7. strict documentation
+  8. standalone source-integration checks when GATEKEEP_RELATION_CONSUMER=1
 EOF
 }
 
@@ -32,6 +35,23 @@ else
     exit 2
   fi
 fi
+
+for tool in cargo taplo typos cargo-machete; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "$tool is unavailable; run 'mise install' and invoke through 'mise exec --'" >&2
+    exit 2
+  fi
+done
+
+echo "== TOML, spelling and dependency checks =="
+(
+  cd "$repo_root"
+  taplo fmt --check
+  typos
+  # The documentation harness includes Markdown snippets outside Rust's module tree.
+  # Its two dependencies are exercised by the mandatory doctest lane below.
+  cargo machete crates examples
+)
 
 echo "== cargo fmt --all --check =="
 (
@@ -61,6 +81,13 @@ echo "== cargo clippy =="
 )
 
 echo
+echo "== production Clippy restrictions =="
+(
+  cd "$repo_root"
+  cargo clippy --workspace --lib --bins --all-features -- -D warnings -D clippy::arithmetic_side_effects -D clippy::panic_in_result_fn -D unreachable_pub
+)
+
+echo
 echo "== cargo deny supply-chain checks =="
 (
   cd "$repo_root"
@@ -82,4 +109,17 @@ echo "== cargo test =="
 )
 
 echo
+echo "== strict documentation =="
+(
+  cd "$repo_root"
+  RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-D warnings" cargo doc --workspace --all-features --no-deps
+)
+
+echo
+if [[ "${GATEKEEP_RELATION_CONSUMER:-0}" == "1" ]]; then
+  "$repo_root/scripts/check-relation-consumer.sh"
+else
+  echo "Standalone relation consumer source integration skipped; set GATEKEEP_RELATION_CONSUMER=1 with matching sibling sources (see CONTRIBUTING.md)."
+fi
+
 echo "Gatekeep project gates passed."

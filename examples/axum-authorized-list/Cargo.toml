@@ -16,7 +16,6 @@ gatekeep-example-authorized-list-support = { path = "../authorized-list-support"
 gatekeep-axum = { path = "../../crates/gatekeep-axum", version = "4.0.0" }
 serde_json.workspace = true
 thiserror.workspace = true
-time.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tower.workspace = true
 

@@ -20,6 +20,7 @@ use gatekeep_axum::{
     DenialError, DenialResponseConfig, GatekeepAxumError, GatekeepRejection, Gatekeeper,
     test_support::{DenialAssertError, ExpectedDenial, assert_denial_response},
 };
+use std::sync::atomic::AtomicUsize;
 use std::{
     convert::Infallible,
     sync::{
@@ -33,7 +34,9 @@ use support::{
     read_policy,
 };
 use time::OffsetDateTime;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::oneshot;
+use tokio::task::yield_now;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -70,7 +73,7 @@ async fn permit_records_audit_and_observer_payloads() -> Result<(), TestError> {
     let resolution = entries[0].fact_resolution();
     let authenticated_at = match context.binding() {
         TenantBinding::ApplicationVerified(binding) => binding.evidence().authenticated_at(),
-        TenantBinding::TrustedService(_) => unreachable!("test uses application binding"),
+        TenantBinding::TrustedService(_) => return Err(TestError::ExpectedApplicationBinding),
     };
     assert!(resolution.observed_at() >= authenticated_at);
     assert_ne!(resolution.fact_set_digest().as_bytes(), &[0; 32]);
@@ -347,7 +350,7 @@ async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestErro
     let (release, wait_for_release) = oneshot::channel();
     let completed = Arc::new(AtomicBool::new(false));
     let audit = BlockingAudit {
-        release: tokio::sync::Mutex::new(Some(wait_for_release)),
+        release: AsyncMutex::new(Some(wait_for_release)),
         completed: Arc::clone(&completed),
     };
 
@@ -363,7 +366,7 @@ async fn authorize_awaits_audit_before_returning_permit() -> Result<(), TestErro
 
     let task = tokio::spawn(async move { gatekeeper.authorize(policy_id, &policy, context).await });
 
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(!task.is_finished());
     assert!(!completed.load(Ordering::SeqCst));
 
@@ -400,7 +403,7 @@ async fn stale_binding_is_rejected_before_fact_resolution() -> Result<(), TestEr
         Locale::new("en-US")?,
         now,
     )?;
-    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let calls = Arc::new(AtomicUsize::new(0));
     let gatekeeper = Gatekeeper::unaudited(CountingResolver {
         calls: Arc::clone(&calls),
     })
@@ -447,7 +450,7 @@ async fn binding_expiry_during_resolution_is_rejected_before_evaluation_or_audit
         Locale::new("en-US")?,
         now,
     )?;
-    let clock_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let clock_calls = Arc::new(AtomicUsize::new(0));
     let clock_state = Arc::clone(&clock_calls);
     let audit = RecordingAudit::default();
     let gatekeeper = Gatekeeper::new(
@@ -478,13 +481,13 @@ async fn binding_expiry_during_resolution_is_rejected_before_evaluation_or_audit
 }
 
 struct BlockingAudit {
-    release: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
+    release: AsyncMutex<Option<oneshot::Receiver<()>>>,
     completed: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
 struct CountingResolver {
-    calls: Arc<std::sync::atomic::AtomicUsize>,
+    calls: Arc<AtomicUsize>,
 }
 
 #[async_trait::async_trait]
@@ -538,7 +541,7 @@ struct AppState {
 
 async fn hidden_handler(
     State(state): State<AppState>,
-) -> Result<&'static str, GatekeepRejection<std::convert::Infallible, std::convert::Infallible>> {
+) -> Result<&'static str, GatekeepRejection<Infallible, Infallible>> {
     state
         .gatekeeper
         .authorize(state.policy_id, &state.policy, state.context)
