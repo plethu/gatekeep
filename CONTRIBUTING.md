@@ -18,6 +18,7 @@ workspace tests and doctests, strict rustdoc, isolated consumer builds and docs
 links. Its implementation lives in `scripts/check-project-gates.sh`. Run
 `mise run fmt` to format Rust and TOML, or `mise tasks` to list commands.
 
+Run a focused test with `mise exec -- just test <filter> -- --nocapture`.
 For SQLx, migration or database-query changes, also run `mise run test-db`.
 See [structural checks](tools/ast-grep/README.md) for the Rust rules.
 The pinned toolchain checks the minimum Rust version declared in `Cargo.toml`;

@@ -181,10 +181,10 @@ where
 impl<R, A, C: ReasonCatalog, W> Gatekeeper<R, A, C, W> {
     fn present<O: Serialize + Clone, Resolve, Audit>(
         &self,
-        result: gatekeep::AuditedDecision<O>,
+        result: gatekeep::AuthorizationDecision<O>,
         context: &Context,
     ) -> Result<Authorized<O>, GatekeepRejection<Resolve, Audit>> {
-        let gatekeep::AuditedDecision {
+        let gatekeep::AuthorizationDecision {
             decision,
             audit_occurrence,
         } = result;

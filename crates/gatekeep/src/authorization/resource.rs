@@ -1,5 +1,5 @@
 use super::Authorizer;
-use crate::{AuditSink, AuditedDecision, AuthorizationError, Context, PolicyObserver};
+use crate::{AuditSink, AuthorizationDecision, AuthorizationError, Context, PolicyObserver};
 
 impl<R: crate::ResourcePolicy, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
     /// Checks a typed resource operation using the same required audit boundary.
@@ -15,7 +15,7 @@ impl<R: crate::ResourcePolicy, A: AuditSink, W: PolicyObserver> Authorizer<R, A,
         principal: &R::Principal,
         resource: &R::Resource,
         context: &Context,
-    ) -> Result<AuditedDecision<R::Outcome>, AuthorizationError<R::Error, A::Error>> {
+    ) -> Result<AuthorizationDecision<R::Outcome>, AuthorizationError<R::Error, A::Error>> {
         context.validate_at(self.clock.now_utc())?;
         let policy = self.resolver.policy(action);
         let resolution = self

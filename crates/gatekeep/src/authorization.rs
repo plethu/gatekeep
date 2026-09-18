@@ -13,15 +13,15 @@ use crate::{
     PreparedPolicy, ResolveError, SystemClock, evaluate, required_facts,
 };
 
-/// A completed decision whose configured audit sink has returned success.
+/// A completed authorization decision and its audit occurrence.
 ///
-/// Explicitly unaudited construction uses a no-op sink and creates no durable
-/// record. The result alone does not establish the sink's durability contract.
+/// The configured sink has returned success. Explicitly unaudited authorizers
+/// do not persist a record.
 ///
 /// Denials are retained alongside permits. Applications must inspect the decision
 /// before performing protected work. A returned obligation still needs execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AuditedDecision<O> {
+pub struct AuthorizationDecision<O> {
     /// Complete typed decision.
     pub decision: Decision<O>,
     /// Occurrence submitted to the configured sink.
@@ -109,7 +109,7 @@ impl<R: FactResolver, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
         &self,
         policy: &PreparedPolicy<O>,
         context: &Context,
-    ) -> Result<AuditedDecision<O>, AuthorizationError<R::Error, A::Error>> {
+    ) -> Result<AuthorizationDecision<O>, AuthorizationError<R::Error, A::Error>> {
         self.run(
             policy.policy(),
             policy.anchor(),
@@ -157,7 +157,7 @@ impl<R: FactResolver, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
         id: PolicyId,
         policy: &Policy<O>,
         context: &Context,
-    ) -> Result<AuditedDecision<O>, AuthorizationError<R::Error, A::Error>> {
+    ) -> Result<AuthorizationDecision<O>, AuthorizationError<R::Error, A::Error>> {
         context.validate_at(self.clock.now_utc())?;
         let anchor = PolicyAnchor::new(id, policy.hash().map_err(AuthorizationError::PolicyHash)?);
         let required = required_facts(policy).into_iter().collect::<Vec<_>>();
@@ -171,7 +171,7 @@ impl<R: FactResolver, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
         required: &[crate::FactId],
         context: &Context,
         checked: bool,
-    ) -> Result<AuditedDecision<O>, AuthorizationError<R::Error, A::Error>> {
+    ) -> Result<AuthorizationDecision<O>, AuthorizationError<R::Error, A::Error>> {
         context.validate_at(self.clock.now_utc())?;
         let resolution = self
             .resolver
@@ -218,7 +218,7 @@ impl<R: Send + Sync, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
         required: Option<&[crate::FactId]>,
         context: &Context,
         resolution: &crate::FactResolution<crate::KnownFacts>,
-    ) -> Result<AuditedDecision<O>, AuthorizationError<E, A::Error>> {
+    ) -> Result<AuthorizationDecision<O>, AuthorizationError<E, A::Error>> {
         let pending = self.assemble(policy, anchor, required, context, resolution)?;
         self.persist(pending).await
     }
@@ -273,7 +273,7 @@ impl<R: Send + Sync, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
     pub async fn persist_pending<O: Clone + Send + Sync>(
         &self,
         pending: &crate::PendingDecision<O>,
-    ) -> Result<AuditedDecision<O>, A::Error> {
+    ) -> Result<AuthorizationDecision<O>, A::Error> {
         self.audit_sink.record(pending.entry()).await?;
         let entry = pending.entry();
         self.observer.observe(&DecisionSummary {
@@ -282,7 +282,7 @@ impl<R: Send + Sync, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
             obligations: entry.obligations().to_vec(),
             consulted: entry.consulted().to_vec(),
         });
-        Ok(AuditedDecision {
+        Ok(AuthorizationDecision {
             decision: pending.decision().clone(),
             audit_occurrence: entry.occurrence(),
         })
@@ -291,7 +291,7 @@ impl<R: Send + Sync, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
     async fn persist<O: Clone + Send + Sync, E>(
         &self,
         pending: crate::PendingDecision<O>,
-    ) -> Result<AuditedDecision<O>, AuthorizationError<E, A::Error>> {
+    ) -> Result<AuthorizationDecision<O>, AuthorizationError<E, A::Error>> {
         self.persist_pending(&pending)
             .await
             .map_err(|source| AuthorizationError::Audit {

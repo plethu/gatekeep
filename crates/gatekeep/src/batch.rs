@@ -1,6 +1,6 @@
 use crate::{
-    AuditedDecision, AuthorizationError, Clock, Context, FactId, FactResolution, FactResolver,
-    KnownFacts, ResolveError,
+    AuthorizationDecision, AuthorizationError, Clock, Context, FactId, FactResolution,
+    FactResolver, KnownFacts, ResolveError,
 };
 use async_trait::async_trait;
 
@@ -60,7 +60,7 @@ pub enum BatchError<E> {
 #[derive(Debug)]
 pub struct BatchDecisions<O, R, A> {
     /// One result per input position. Successful denials retain their audit record.
-    pub results: Vec<Result<AuditedDecision<O>, AuthorizationError<R, A>>>,
+    pub results: Vec<Result<AuthorizationDecision<O>, AuthorizationError<R, A>>>,
 }
 
 impl<O, R, A> BatchDecisions<O, R, A> {
@@ -69,7 +69,7 @@ impl<O, R, A> BatchDecisions<O, R, A> {
     /// # Errors
     /// Returns the entire batch, preserving all item evidence, if any failed.
     /// This controls response handling; it does not roll back previous writes.
-    pub fn into_strict(self) -> Result<Vec<AuditedDecision<O>>, Self> {
+    pub fn into_strict(self) -> Result<Vec<AuthorizationDecision<O>>, Self> {
         if self.results.iter().any(Result::is_err) {
             return Err(self);
         }

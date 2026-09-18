@@ -1,6 +1,6 @@
 use super::Authorizer;
 use crate::{
-    AuditSink, AuditedDecision, AuthorizationError, Context, DecisionAuditId,
+    AuditSink, AuthorizationDecision, AuthorizationError, Context, DecisionAuditId,
     DecisionAuditOccurrence, FactResolver, Lattice, PolicyObserver, PreparedPolicy,
 };
 use serde::Serialize;
@@ -19,7 +19,10 @@ impl<R: FactResolver, A: AuditSink, W: PolicyObserver> Authorizer<R, A, W> {
         policy: &PreparedPolicy<O>,
         context: &Context,
         attempts: &T,
-    ) -> Result<AuditedDecision<O>, crate::AttemptAuthorizationError<R::Error, A::Error, T::Error>>
+    ) -> Result<
+        AuthorizationDecision<O>,
+        crate::AttemptAuthorizationError<R::Error, A::Error, T::Error>,
+    >
     where
         O: Lattice + Serialize + Send + Sync,
         T: crate::AttemptAuditSink,

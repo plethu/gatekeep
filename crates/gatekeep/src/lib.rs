@@ -92,7 +92,7 @@ pub use tenant::{
     TenantBinding, TenantBindingError, TenantBindingEvidence, TrustedServiceBinding,
 };
 
-pub use authorization::{AuditedDecision, Authorizer};
+pub use authorization::{AuthorizationDecision, Authorizer};
 pub use authorization_error::AuthorizationError;
 pub use explanation::ExplanationAudience;
 pub use inspection::{PolicyAdvice, PolicyInspection};

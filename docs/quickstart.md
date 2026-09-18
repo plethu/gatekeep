@@ -3,7 +3,6 @@
 These examples use the unreleased checked-authoring APIs in this checkout.
 For the published 4.x API, start with [installation](installation.md).
 
-
 An ownership check needs one named fact and a permit/deny policy. The check is
 ordinary Rust; its stable name is what appears in a decision trace.
 
@@ -15,11 +14,7 @@ impl Fact for Owner {
     const ID: StaticFactId = StaticFactId::new("record.owner");
 }
 
-# fn main() -> Result<(), Box<dyn std::error::Error>> {
-let may_read = policy::grant_clause((), condition::has::<Owner>())
-    .try_labeled("owner-read")?
-    .try_reason("not-owner")?
-    .into_policy();
+let may_read = policy::grant_clause((), condition::has::<Owner>()).into_policy();
 
 let actor_id = "alex";
 let owner_id = "alex";
@@ -27,8 +22,6 @@ let facts = KnownFacts::new().with_bool::<Owner>(actor_id == owner_id);
 let decision = evaluate(&may_read, &facts);
 assert!(decision.is_permit());
 assert_eq!(facts.observed::<Owner>(), Some(true));
-# Ok(())
-# }
 ```
 
 `()` is the outcome for an ordinary gate. You can add

@@ -17,8 +17,9 @@ own API from its manifest.
 2. [Installation](installation.md)
 3. [Quickstart](quickstart.md)
 
-Read [Combining permit outcomes](concepts/lattice-outcomes.md) before designing
-graded access such as redacted/full records or scope unions.
+Try the [record service](guides/record-service.md) for a runnable application.
+Use [resource policies](guides/resource-policies.md) to group operations, and
+[combining outcomes](concepts/lattice-outcomes.md) when you need disclosure tiers.
 
 ## Concepts
 
@@ -29,6 +30,9 @@ graded access such as redacted/full records or scope unions.
 
 ## Guides
 
+- [Checked authorization and audit](guides/checked-authorization.md)
+- [Application recipes](guides/recipes.md)
+- [Testing policies](guides/testing.md)
 - [Axum authorization](guides/axum-authorization.md)
 - [SQLx list filtering](guides/sqlx-list-filtering.md)
 - [Durable audit](guides/durable-audit.md)
