@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use gatekeep::{
     ApplicationVerifiedTenantBinding, AuditEntry, AuditSink, BindingAuthority, BindingProvenance,
     Clock, Context, DecisionSummary, EvidenceDigest, Fact, FactId, FactResolution, FactResolver,
-    KnownFacts, Lattice, Locale, PartialFacts, Policy, PolicyObserver, ReasonCatalog, ResolveError,
-    StaticFactId, SubjectRef, TenantBinding, TenantBindingEvidence, TenantId, condition, policy,
+    KnownFacts, Lattice, Locale, Policy, PolicyObserver, ReasonCatalog, ResolveError, StaticFactId,
+    SubjectRef, TenantBinding, TenantBindingEvidence, TenantId, condition, policy,
 };
 use gatekeep_axum::GatekeepRejection;
 
@@ -76,16 +76,6 @@ impl FactResolver for StaticResolver {
             clock.now_utc(),
         )
         .map_err(ResolveError::Resolution)
-    }
-
-    async fn resolve_for_query(
-        &self,
-        _required: &[FactId],
-        _cx: &Context,
-        clock: &dyn Clock,
-    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
-        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
-            .map_err(ResolveError::Resolution)
     }
 }
 

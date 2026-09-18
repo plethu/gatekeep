@@ -14,7 +14,7 @@ use axum::{
 use gatekeep::{
     ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context,
     DecisionAuditId, DecisionAuditOccurrence, EvidenceDigest, FactId, FactResolution, FactResolver,
-    KnownFacts, Locale, PartialFacts, Policy, PolicyId, ResolveError, SubjectRef, TenantBinding,
+    KnownFacts, Locale, Policy, PolicyId, ResolveError, SubjectRef, TenantBinding,
     TenantBindingEvidence, TenantId, condition, policy,
 };
 use gatekeep_axum::{
@@ -503,17 +503,6 @@ impl FactResolver for CountingResolver {
     ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         FactResolution::new(KnownFacts::new(), None, clock.now_utc())
-            .map_err(ResolveError::Resolution)
-    }
-
-    async fn resolve_for_query(
-        &self,
-        _required: &[FactId],
-        _cx: &Context,
-        clock: &dyn Clock,
-    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
             .map_err(ResolveError::Resolution)
     }
 }

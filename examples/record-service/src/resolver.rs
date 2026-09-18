@@ -2,7 +2,7 @@ use crate::{Emergency, Enabled, Owner, Released, Shared};
 use async_trait::async_trait;
 use gatekeep::{
     BatchFactResolver, Clock, Context, FactId, FactResolution, FactResolver, KnownFacts,
-    PartialFacts, ResolveError,
+    PartialFacts, QueryFactResolver, ResolveError,
 };
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::{
@@ -140,6 +140,10 @@ impl FactResolver for RecordResolver {
             .pop()
             .ok_or_else(|| ResolveError::Backend(sqlx::Error::RowNotFound))?
     }
+}
+
+#[async_trait]
+impl QueryFactResolver for RecordResolver {
     async fn resolve_for_query(
         &self,
         required: &[FactId],

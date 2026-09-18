@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 use async_trait::async_trait;
 use gatekeep::{
     BindingProvenance, Clock, Context, FactId, FactResolution, FactResolutionMetadata,
-    FactResolver, KnownFacts, PartialFacts, ResolveError,
+    FactResolver, KnownFacts, ResolveError,
 };
 use gatekeep_axum::Gatekeeper;
 use gatekeep_sqlx::PgDovecoteAudit;
@@ -51,16 +51,6 @@ impl FactResolver for ApplicationFactResolver {
             .ok()
             .map(|source| FactResolutionMetadata::new(source, None, None));
         FactResolution::new(KnownFacts::new(), metadata, clock.now_utc())
-            .map_err(ResolveError::Resolution)
-    }
-
-    async fn resolve_for_query(
-        &self,
-        _required: &[FactId],
-        _cx: &Context,
-        clock: &dyn Clock,
-    ) -> Result<FactResolution<PartialFacts>, ResolveError<Self::Error>> {
-        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
             .map_err(ResolveError::Resolution)
     }
 }

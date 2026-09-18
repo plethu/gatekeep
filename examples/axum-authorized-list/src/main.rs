@@ -6,7 +6,7 @@ use tokio::{net::TcpListener, runtime::Runtime};
 use async_trait::async_trait;
 use gatekeep::{
     BindingProvenance, Clock, Context, FactId, FactResolution, FactResolutionMetadata,
-    FactResolver, GatekeepError, KnownFacts, PartialFacts, ResolveError,
+    FactResolver, GatekeepError, KnownFacts, PartialFacts, QueryFactResolver, ResolveError,
 };
 use gatekeep_example_authorized_list_support::{CaseOwner, SharedCase, Staff, router};
 
@@ -78,7 +78,10 @@ impl FactResolver for StaticResolver {
             .map(|source| FactResolutionMetadata::new(source, None, None));
         FactResolution::new(facts, metadata, clock.now_utc()).map_err(ResolveError::Resolution)
     }
+}
 
+#[async_trait]
+impl QueryFactResolver for StaticResolver {
     async fn resolve_for_query(
         &self,
         required: &[FactId],

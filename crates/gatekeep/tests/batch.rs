@@ -3,8 +3,7 @@ use async_trait::async_trait;
 use gatekeep::{
     AuditEntry, AuditSink, Authorizer, BatchError, BatchFactResolver, BindingProvenance, Clock,
     Context, FactId, FactResolution, FactResolutionMetadata, FactResolver, KnownFacts, Locale,
-    PartialFacts, PolicyId, PreparedPolicy, ResolveError, SubjectRef, TenantId,
-    TrustedServiceBinding, policy,
+    PolicyId, PreparedPolicy, ResolveError, SubjectRef, TenantId, TrustedServiceBinding, policy,
 };
 use std::{
     convert::Infallible,
@@ -48,15 +47,6 @@ impl FactResolver for Resolver {
             )
         });
         FactResolution::new(KnownFacts::new(), metadata, clock.now_utc())
-            .map_err(ResolveError::Resolution)
-    }
-    async fn resolve_for_query(
-        &self,
-        _: &[FactId],
-        _: &Context,
-        clock: &dyn Clock,
-    ) -> Result<FactResolution<PartialFacts>, ResolveError<Infallible>> {
-        FactResolution::new(PartialFacts::new(), None, clock.now_utc())
             .map_err(ResolveError::Resolution)
     }
 }

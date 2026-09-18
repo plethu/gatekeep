@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use async_trait::async_trait;
 use gatekeep::{
     BindingProvenance, Clock, Context, Fact, FactId, FactResolution, FactResolutionMetadata,
-    FactResolver, KnownFacts, PartialFacts, Presence, ResolveError,
+    FactResolver, KnownFacts, PartialFacts, Presence, QueryFactResolver, ResolveError,
 };
 use keepsake::{
     ActiveRelationSource, LifecycleState, ObservationTime, RelationId, RelationSpec,
@@ -298,7 +298,14 @@ where
         )
         .map_err(ResolveError::Resolution)
     }
+}
 
+#[async_trait]
+impl<S, M> QueryFactResolver for KeepsakeResolver<S, M>
+where
+    S: ActiveRelationSource,
+    M: SubjectMapper,
+{
     async fn resolve_for_query(
         &self,
         required: &[FactId],

@@ -408,11 +408,19 @@ pub trait FactResolver: Send + Sync {
         cx: &Context,
         clock: &dyn Clock,
     ) -> Result<FactResolution<KnownFacts>, ResolveError<Self::Error>>;
+}
 
+/// Optional query resolution for applications that lower policies into list filters.
+///
+/// Implement this alongside [`FactResolver`] when some facts must remain unknown
+/// until the database evaluates each row. Point authorization only needs
+/// [`FactResolver`].
+#[async_trait]
+pub trait QueryFactResolver: FactResolver {
     /// Resolves known request facts and marks query-deferred facts as unknown.
     ///
     /// The resolver must use `clock` for its `FactResolution::observed_at`
-    /// value, as in [`Self::resolve_for_decision`].
+    /// value, as in [`FactResolver::resolve_for_decision`].
     async fn resolve_for_query(
         &self,
         required: &[FactId],

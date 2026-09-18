@@ -85,7 +85,7 @@ pub use policy_model::{
 pub use query::{LowerError, Lowered, QueryLowering};
 pub use resolution::{
     FactResolution, FactResolutionError, FactResolutionEvidence, FactResolutionEvidenceError,
-    FactResolutionMetadata, FactResolver, ResolveError,
+    FactResolutionMetadata, FactResolver, QueryFactResolver, ResolveError,
 };
 pub use tenant::{
     ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, EvidenceDigest,

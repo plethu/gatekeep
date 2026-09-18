@@ -21,6 +21,10 @@ Omitted results fail before evaluation. Query-deferred unknowns belong to
 `PartialFacts`; source failures are typed errors. Do not turn an unavailable
 backend into a negative observation with `unwrap_or(false)`.
 
+Point checks need only `FactResolver::resolve_for_decision`. Implement the optional
+`QueryFactResolver` trait on the same resolver when you also need partial facts
+for SQL list filtering; there is no default query resolution.
+
 ## Evidence
 
 Set-level source, revision, observation time and digest remain valid evidence.

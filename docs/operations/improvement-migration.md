@@ -15,6 +15,11 @@ validation failures. Deserializing `FactResolution<F>` requires `F` to implement
 must report supplied entries and preserve omission as `None`. These public
 contract changes require a major release of the core and dependent adapters.
 
+`FactResolver` now requires only `resolve_for_decision`. For SQL list filtering,
+move `resolve_for_query` into a separate `impl QueryFactResolver` on the same
+resolver and import that trait at query call sites. Its error type comes from
+`FactResolver`. Point-only resolvers can delete their unused query method.
+
 New decision records use audit schema 2. Readers accept schema 1 and 2; old
 schema-1 records retain their marker, and empty selected evidence is not added
 to their serialized payload. A schema-1 record cannot claim schema-2 individual

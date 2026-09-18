@@ -9,7 +9,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use gatekeep::{AuditEntry, AuditSink, FactResolver, Presence, ResolveError, SubjectSlot};
+use gatekeep::{
+    AuditEntry, AuditSink, FactResolver, Presence, QueryFactResolver, ResolveError, SubjectSlot,
+};
 use gatekeep_keepsake::{
     FactBinding, KeepsakeResolveError, KeepsakeResolver, KeepsakeTargetError,
     PrincipalSubjectMapper, QueryPresence, tenant_scoped_subject,

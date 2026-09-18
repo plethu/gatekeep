@@ -2,6 +2,7 @@
 
 ## Unreleased — core, Axum, Fluent and SQLx 5.0.0; Keepsake bridge 6.0.0
 
+- Separates optional `QueryFactResolver` from point-only `FactResolver`.
 - Adds ordinary Rust resource policies, prepared policies and a shared checked
   authorizer for HTTP and other application code. Existing pure evaluation and
   policy hash semantics remain unchanged.

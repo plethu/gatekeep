@@ -11,9 +11,9 @@ use axum::{
 };
 use gatekeep::{
     ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context,
-    EvidenceDigest, Fact, FactId, FactResolver, GatekeepError, Lattice, Locale, LowerError, Policy,
-    PolicyId, ResolveError, StaticFactId, SubjectRef, TenantBinding, TenantBindingEvidence,
-    TenantId, condition, partial_evaluate, policy, required_facts,
+    EvidenceDigest, Fact, FactId, GatekeepError, Lattice, Locale, LowerError, Policy, PolicyId,
+    QueryFactResolver, ResolveError, StaticFactId, SubjectRef, TenantBinding,
+    TenantBindingEvidence, TenantId, condition, partial_evaluate, policy, required_facts,
 };
 use gatekeep_axum::{GatekeepRejection, Gatekeeper};
 use gatekeep_fluent::{FluentCatalog, FluentCatalogError};
@@ -37,7 +37,7 @@ pub const EXPECTED_LIST_BINDS: usize = 6;
 /// cannot be constructed.
 pub fn router<R>(resolver: R) -> Result<Router, BuildError>
 where
-    R: FactResolver + Clone + Send + Sync + 'static,
+    R: QueryFactResolver + Clone + Send + Sync + 'static,
 {
     let state = AppState::new(resolver)?;
     Ok(Router::new()
@@ -90,7 +90,7 @@ struct AppState<R> {
 
 impl<R> AppState<R>
 where
-    R: FactResolver + Clone + Send + Sync + 'static,
+    R: QueryFactResolver + Clone + Send + Sync + 'static,
 {
     fn new(resolver: R) -> Result<Self, BuildError> {
         let catalog = FluentCatalog::new()
@@ -112,7 +112,7 @@ async fn get_staff_case<R>(
     Path(case_id): Path<String>,
 ) -> Result<Json<CaseDetail>, AppError<R::Error>>
 where
-    R: FactResolver + Clone + Send + Sync + 'static,
+    R: QueryFactResolver + Clone + Send + Sync + 'static,
 {
     let authorized = state
         .gatekeeper
@@ -133,14 +133,14 @@ async fn list_cases<R>(
     State(state): State<AppState<R>>,
 ) -> Result<Json<AuthorizedList>, AppError<R::Error>>
 where
-    R: FactResolver + Clone + Send + Sync + 'static,
+    R: QueryFactResolver + Clone + Send + Sync + 'static,
 {
     Ok(Json(lower_authorized_list(&state).await?))
 }
 
 async fn lower_authorized_list<R>(state: &AppState<R>) -> Result<AuthorizedList, AppError<R::Error>>
 where
-    R: FactResolver + Clone + Send + Sync + 'static,
+    R: QueryFactResolver + Clone + Send + Sync + 'static,
 {
     let required = required_facts(&state.list_policy)
         .into_iter()
