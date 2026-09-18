@@ -22,9 +22,9 @@ while read -r package baseline; do
       --baseline-version "$baseline" --release-type "$mode" "$features" "${extra[@]}"
   done
 done <<'BASELINES'
-gatekeep 4.0.1
-gatekeep-axum 4.0.0
-gatekeep-fluent 4.0.0
-gatekeep-keepsake 5.0.0
-gatekeep-sqlx 4.0.1
+gatekeep 5.0.0
+gatekeep-axum 5.0.0
+gatekeep-fluent 5.0.0
+gatekeep-keepsake 6.0.0
+gatekeep-sqlx 5.0.0
 BASELINES

@@ -48,8 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-      # Core 5 / bridge 6 deliberately change the evidence contract.
-      - run: mise exec -- scripts/check-public-api.sh major
+      - run: mise exec -- just check-public-api
 
   relation-consumer:
     uses: ./.github/workflows/relation-consumer.yml
