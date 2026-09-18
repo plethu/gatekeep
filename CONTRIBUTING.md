@@ -13,14 +13,13 @@ mise install
 mise run check
 ```
 
-`check` runs formatting, spelling, dependency checks, structural rules, Clippy,
+`check` runs formatting, spelling, dependency checks, Clippy,
 workspace tests and doctests, strict rustdoc, isolated consumer builds and docs
 links. Its implementation lives in `scripts/check-project-gates.sh`. Run
 `mise run fmt` to format Rust and TOML, or `mise tasks` to list commands.
 
 Run a focused test with `mise exec -- just test <filter> -- --nocapture`.
 For SQLx, migration or database-query changes, also run `mise run test-db`.
-See [structural checks](tools/ast-grep/README.md) for the Rust rules.
 The pinned toolchain checks the minimum Rust version declared in `Cargo.toml`;
 raising that minimum is a deliberate compatibility decision.
 
@@ -33,13 +32,16 @@ require multiple versions of a crate.
 
 ## Documentation and API changes
 
+`mise exec -- just check-public-api` compares default, no-default, and all-feature
+APIs against the published baselines in `scripts/check-public-api.sh`. SQLx
+requires a backend, so its no-default check selects SQLite explicitly. CI uses
+major-release mode for the planned breaking release; that mode permits breaks.
+After publication, update the baselines and restore minor-release enforcement.
+See [versioning](docs/operations/versioning.md) for durable-format compatibility.
+
 [Human guides](docs/README.md) live in `docs`; API detail belongs in rustdoc.
 Update examples when changing public behavior. `mise exec -- just docs-site`
 builds the searchable book in `target/book` from those same Markdown files.
-
-`mise exec -- just check-public-api minor` compares public APIs against explicit
-published baselines. See [versioning](docs/operations/versioning.md) for major
-changes and durable-format compatibility.
 
 The book build applies checked compatibility transforms for keyboard sidebar
 activation, search input and focus. Review them when updating mdBook. Exercise

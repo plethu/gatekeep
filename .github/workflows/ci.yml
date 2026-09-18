@@ -29,7 +29,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: gates-${{ hashFiles('.mise.toml', '.config/mise/conf.d/batten.toml', 'Cargo.lock') }}
+          key: gates-${{ hashFiles('.mise.toml', 'Cargo.lock') }}
           restore-keys: |
             gates-
 
