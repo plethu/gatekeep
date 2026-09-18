@@ -10,10 +10,10 @@ use axum::{
     routing::get,
 };
 use gatekeep::{
-    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context, Effect,
+    ApplicationVerifiedTenantBinding, BindingAuthority, BindingProvenance, Clock, Context,
     EvidenceDigest, Fact, FactId, FactResolver, GatekeepError, Lattice, Locale, LowerError, Policy,
-    PolicyId, QueryLowering, Residual, ResolveError, StaticFactId, SubjectRef, TenantBinding,
-    TenantBindingEvidence, TenantId, condition, partial_evaluate, policy, required_facts,
+    PolicyId, ResolveError, StaticFactId, SubjectRef, TenantBinding, TenantBindingEvidence,
+    TenantId, condition, partial_evaluate, policy, required_facts,
 };
 use gatekeep_axum::{GatekeepRejection, Gatekeeper};
 use gatekeep_fluent::{FluentCatalog, FluentCatalogError};
@@ -157,20 +157,7 @@ where
         .validate_at(received_at)
         .map_err(ResolveError::Resolution)?;
     let residual = partial_evaluate(&state.list_policy, resolution.facts());
-    let lowered = match residual {
-        Residual::Pending { residual, .. } => state.lowerer.lower(&residual, &state.context)?,
-        Residual::Resolved(decision) => {
-            let lowered = lowered_resolved(&decision.effect);
-            gatekeep::Lowered {
-                filter: state
-                    .lowerer
-                    .enforce_tenant_filter(lowered.filter, &state.context),
-                grade: state
-                    .lowerer
-                    .enforce_tenant_projection(lowered.grade, &state.context),
-            }
-        }
-    };
+    let lowered = state.lowerer.lower_result(&residual, &state.context)?;
 
     let bind_count = lowered.grade.binds().chain(lowered.filter.binds()).count();
     let mut builder = QueryBuilder::<Postgres>::new("SELECT cases.id, cases.title, ");
@@ -183,19 +170,6 @@ where
         sql: query.sql().as_str().to_owned(),
         bind_count,
     })
-}
-
-fn lowered_resolved(effect: &Effect<ReadAccess>) -> gatekeep::Lowered<PgFragment, PgFragment> {
-    match effect {
-        Effect::Permit(outcome) => gatekeep::Lowered {
-            filter: PgFragment::trusted("TRUE"),
-            grade: PgFragment::bind(outcome.to_sql_ordinal()),
-        },
-        Effect::Deny => gatekeep::Lowered {
-            filter: PgFragment::trusted("FALSE"),
-            grade: PgFragment::trusted("NULL"),
-        },
-    }
 }
 
 fn staff_detail_policy() -> Result<Policy<ReadAccess>, GatekeepError> {

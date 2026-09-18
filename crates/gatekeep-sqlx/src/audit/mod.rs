@@ -6,6 +6,9 @@
 //! shape. It deliberately contains no Gatekeep-owned audit tables or paging
 //! model.
 
+mod attempt;
+pub use attempt::{ATTEMPT_AUDIT_EVENT_TYPE, AttemptAuditEventError, decode_authorization_attempt};
+
 use gatekeep::{AuditEntry, AuditEntryError, DecisionAuditId, GatekeepError, LegacyAuditEntry};
 use serde_json::Error as JsonError;
 use thiserror::Error;
@@ -33,6 +36,7 @@ pub const DEFAULT_AUDIT_STREAM: &str = "gatekeep-audit";
 pub const DECISION_AUDIT_EVENT_TYPE: &str = "gatekeep.decision_audit_recorded";
 /// The explicit JSON content type used for every decision audit event.
 pub const DECISION_AUDIT_CONTENT_TYPE: &str = "application/json";
+const MAX_AUDIT_PAYLOAD_BYTES: usize = 1_048_576;
 
 /// Configuration required to write Gatekeep audit events.
 ///
@@ -139,6 +143,9 @@ pub enum DecisionAuditConfigError {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum DecisionAuditEventError {
+    /// Encoded evidence exceeds the supported one MiB payload bound.
+    #[error("decision audit payload exceeds size limit")]
+    PayloadTooLarge,
     /// The entry is not a valid current decision record.
     #[error(transparent)]
     Entry(#[from] AuditEntryError),
@@ -313,6 +320,11 @@ fn decode_event(
 /// binding/evidence is rejected by [`decode_decision_audit`] rather than being
 /// silently treated as legacy history.
 fn decode_payload(payload: &[u8]) -> Result<AuditEntry, DecisionAuditDecodeError> {
+    if payload.len() > MAX_AUDIT_PAYLOAD_BYTES {
+        return Err(DecisionAuditDecodeError::UnexpectedShape {
+            field: "payload size",
+        });
+    }
     serde_json::from_slice(payload).map_err(DecisionAuditDecodeError::Json)
 }
 
@@ -331,6 +343,10 @@ fn event_from_entry(
     ))
     .map_err(DecisionAuditEventError::Validation)?;
     let payload = serde_json::to_vec(entry).map_err(DecisionAuditEventError::Json)?;
+    if payload.len() > MAX_AUDIT_PAYLOAD_BYTES {
+        return Err(DecisionAuditEventError::PayloadTooLarge);
+    }
+
     let event = NewEvent::builder(
         config.stream.clone(),
         event_id,

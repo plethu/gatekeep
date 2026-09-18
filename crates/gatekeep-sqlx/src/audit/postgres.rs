@@ -1,5 +1,7 @@
+use super::AttemptAuditEventError;
+use super::attempt::event_from_attempt;
 use async_trait::async_trait;
-use gatekeep::{AuditEntry, AuditSink};
+use gatekeep::{AttemptAuditSink, AuditEntry, AuditSink, AuthorizationAttempt};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use dovecote::EnqueueOutcome;
@@ -52,6 +54,41 @@ impl PgDovecoteAudit {
         self.dovecote.check_schema().await
     }
 
+    /// Stores a failed attempt in its own transaction.
+    ///
+    /// # Errors
+    /// Returns event validation, enqueue or commit errors. Retain the same
+    /// immutable entry when reconciling an uncertain commit.
+    pub async fn record_authorization_attempt(
+        &self,
+        entry: &AuthorizationAttempt,
+    ) -> Result<EnqueueOutcome, PgDovecoteAuditError> {
+        let mut transaction = self.dovecote.pool().begin().await?;
+        let outcome = self
+            .record_attempt_in_transaction(&mut transaction, entry)
+            .await?;
+        transaction.commit().await?;
+        Ok(outcome)
+    }
+
+    /// Stores a failed attempt in a caller-owned transaction.
+    ///
+    /// # Errors
+    /// Returns event or enqueue failures. The caller must commit for durability;
+    /// rolling back the protected operation also rolls back this audit event.
+    pub async fn record_attempt_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        entry: &AuthorizationAttempt,
+    ) -> Result<EnqueueOutcome, PgDovecoteAuditError> {
+        let (tenant, event) = event_from_attempt(&self.config, entry)?;
+        Ok(self
+            .dovecote
+            .for_tenant(tenant)
+            .enqueue(transaction, event)
+            .await?)
+    }
+
     /// Records an audit event in a transaction owned by this sink.
     ///
     /// This is atomic between the Dovecote event and its pending delivery. Use
@@ -101,6 +138,9 @@ impl PgDovecoteAudit {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PgDovecoteAuditError {
+    /// Failed-attempt payload or event validation error.
+    #[error(transparent)]
+    Attempt(#[from] AttemptAuditEventError),
     /// The typed entry could not be converted to a Dovecote event.
     #[error(transparent)]
     Event(#[from] DecisionAuditEventError),
@@ -118,5 +158,13 @@ impl AuditSink for PgDovecoteAudit {
 
     async fn record(&self, entry: &AuditEntry) -> Result<(), Self::Error> {
         self.record_decision_audit(entry).await.map(|_| ())
+    }
+}
+
+#[async_trait]
+impl AttemptAuditSink for PgDovecoteAudit {
+    type Error = PgDovecoteAuditError;
+    async fn record_attempt(&self, entry: &AuthorizationAttempt) -> Result<(), Self::Error> {
+        self.record_authorization_attempt(entry).await.map(|_| ())
     }
 }

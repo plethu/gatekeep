@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — core, Axum, Fluent and SQLx 5.0.0; Keepsake bridge 6.0.0
+
+- Adds ordinary Rust resource policies, prepared policies and a shared checked
+  authorizer for HTTP and other application code. Existing pure evaluation and
+  policy hash semantics remain unchanged.
+- Adds explicit boolean observations, selected per-fact evidence, frozen audit
+  retries and separately persisted failed attempts. New decision records use
+  schema 2; schema 1 remains readable with its original meaning.
+- Adds provider bulk resolution with per-item results, receipt-time expiry and
+  bounded cancellation behavior; unifies resolved/residual SQL list lowering.
+- Adds policy inspection, reason coverage, audience-specific explanations,
+  scenario comparisons, finite lattice checks and explicit historical replay.
+- Includes a synthetic SQLite record service, real disclosure tests, transaction
+  and concurrent-revocation evidence, searchable documentation and isolated
+  consumer/API checks.
+- SQLx decision and attempt payloads have matching one MiB write/read bounds.
+  The standalone relation consumer updates Rustls to its patched 0.23.45 release.
+
+See [migration notes](docs/operations/improvement-migration.md) for breaking
+contracts.
+
 ## gatekeep-keepsake 5.0.0 — 2026-09-07
 
 - Uses Keepsake 6.0 for effective relation state at the supplied observation time.
@@ -23,8 +44,7 @@
   changing public paths, policy hashes, traces or durable audit encoding.
 - Enforce the selected stricter Clippy profile, production arithmetic and panic
   checks, strict rustdoc, TOML formatting, spelling and dependency ownership from
-  the canonical gate. Compatibility and test-scope decisions are recorded in
-  [the maintainability contract](docs/maintainability.md).
+  the canonical gate.
 
 All notable changes to this project are documented here.
 

@@ -13,9 +13,9 @@ keepsake-sqlx = { path = "../../../keepsake-rs/crates/keepsake-sqlx", version = 
   "postgres",
   "migrations",
 ] }
-gatekeep = { path = "../../crates/gatekeep", version = "4.0.0" }
-gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "5.0.0" }
-gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "4.0.0", default-features = false, features = [
+gatekeep = { path = "../../crates/gatekeep", version = "5.0.0" }
+gatekeep-keepsake = { path = "../../crates/gatekeep-keepsake", version = "6.0.0" }
+gatekeep-sqlx = { path = "../../crates/gatekeep-sqlx", version = "5.0.0", default-features = false, features = [
   "postgres",
 ] }
 dovecote = "0.2.1"

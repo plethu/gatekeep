@@ -43,12 +43,30 @@ gatekeep-keepsake = "5.0"
 keepsake = "6.0"
 ```
 
-These examples target the 2026-09-07 release candidates: core/SQLx 4.0.1 and
-Keepsake bridge 5.0.0. Axum and Fluent remain compatible 4.0.0 releases. Registry
-installation of a candidate requires its publication; Keepsake bridge 5 also
-requires Keepsake 6 to be published first. Until then, use the documented local
-source overrides for development. See [Versioning](operations/versioning.md)
-and [the relation contract](relation-lifecycle-contract.md).
+These versioned examples use crates.io dependencies. They require
+no sibling checkouts or source overrides. The checked authoring/evidence APIs in
+this checkout are unreleased and will require a coordinated major upgrade; see
+[the migration notes](operations/improvement-migration.md).
+
+## First gate on the published version
+
+This example works with the registry dependency above:
+
+```rust
+use gatekeep::{Fact, StaticFactId, KnownFacts, condition, policy, evaluate};
+struct Owner;
+impl Fact for Owner { const ID: StaticFactId = StaticFactId::new("record.owner"); }
+let gate = policy::grant_clause((), condition::has::<Owner>()).into_policy();
+let facts = KnownFacts::new().with_present::<Owner>();
+assert!(evaluate(&gate, &facts).is_permit());
+```
+
+The [published Axum API](https://docs.rs/gatekeep-axum/4.0.0/gatekeep_axum/)
+and [SQLx audit API](https://docs.rs/gatekeep-sqlx/4.0.1/gatekeep_sqlx/)
+use the same required sink boundary. The new `with_bool`, `PreparedPolicy` and
+resource-policy examples need the unreleased checkout until its packages are
+published. The runnable record service requires this repository, but no sibling
+project checkout.
 
 ## Workspace Use
 

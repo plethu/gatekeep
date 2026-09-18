@@ -55,3 +55,13 @@ check:
 
 clean:
     cargo clean
+
+docs-site:
+    python3 scripts/build-docs.py
+    python3 scripts/check-doc-links.py
+
+check-consumers:
+    python3 scripts/check-consumers.py
+
+check-public-api mode="minor":
+    scripts/check-public-api.sh {{ mode }}

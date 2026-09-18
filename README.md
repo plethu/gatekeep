@@ -26,10 +26,11 @@ impl Fact for CaseOwner {
 }
 
 fn main() -> GatekeepResult<()> {
-    let may_read = policy::grant((), condition::has::<CaseOwner>())
-        .try_reason("not_case_owner")?;
+    let may_read = policy::grant_clause((), condition::has::<CaseOwner>())
+        .try_reason("not_case_owner")?
+        .into_policy();
 
-    let facts = KnownFacts::new().with_present::<CaseOwner>();
+    let facts = KnownFacts::new().with_bool::<CaseOwner>(true);
     let decision = evaluate(&may_read, &facts);
     assert_eq!(decision.effect, Effect::Permit(()));
 
@@ -45,6 +46,15 @@ For durable audit, `gatekeep-sqlx` writes complete decision events through
 [Dovecote](https://github.com/plethu/dovecote). The
 [`gatekeep-keepsake`](https://docs.rs/gatekeep-keepsake) adapter reads relation
 state from [Keepsake](https://github.com/plethu/keepsake).
+
+Start with [your first gate](docs/quickstart.md), then try the
+[synthetic record service](docs/guides/record-service.md) for real database rows,
+disclosure tiers and durable audit. [Resource policies](docs/guides/resource-policies.md)
+keep application operations together without an authorization DSL.
+
+The checked authoring and selected-evidence APIs in this checkout are unreleased.
+See the [migration notes](docs/operations/improvement-migration.md) before using
+these examples with a published package.
 
 ## Install
 

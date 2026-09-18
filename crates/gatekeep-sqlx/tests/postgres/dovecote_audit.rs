@@ -179,7 +179,7 @@ async fn pool() -> Result<PgPool, Box<dyn Error>> {
         &database_url,
     )?;
     Ok(PgPoolOptions::new()
-        .max_connections(1)
+        .max_connections(2)
         .connect(&database_url)
         .await?)
 }
@@ -207,5 +207,81 @@ async fn prepare_database(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     sqlx::query("DELETE FROM dovecote_events")
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires docker postgres; run `mise exec -- just test-db-postgres`"]
+async fn permission_guard_fences_mutation_and_audit_against_revocation() -> TestResult<()> {
+    use gatekeep::{
+        Authorizer, Context, FactId, FactResolution, KnownFacts, Locale, PolicyId, PreparedPolicy,
+        Presence, SubjectRef, TenantId, TrustedServiceBinding, condition, policy,
+    };
+    let _serial = serialize_live_test().await;
+    let pool = pool().await?;
+    let competing = pool.clone();
+    prepare_database(&pool).await?;
+    raw_sql("CREATE TABLE IF NOT EXISTS gatekeep_permission_guard (id INTEGER PRIMARY KEY, allowed BOOLEAN NOT NULL, writes INTEGER NOT NULL); INSERT INTO gatekeep_permission_guard VALUES (1, TRUE, 0) ON CONFLICT (id) DO UPDATE SET allowed = TRUE, writes = 0;").execute(&pool).await?;
+    let sink = PgDovecoteAudit::new(pool.clone(), "https://audit.example.test/fenced-operation")?;
+    let prepared = PreparedPolicy::new(
+        PolicyId::new("guarded-write")?,
+        policy::grant_clause((), condition::has_id(FactId::new("allowed")?)).into_policy(),
+    )?;
+    let context = Context::from_trusted_service(
+        TrustedServiceBinding::new(TenantId::new("tenant-1")?, "transaction-test")?,
+        SubjectRef::new("user", "writer")?,
+        Locale::new("en")?,
+    )?;
+    let authorizer = Authorizer::unaudited(());
+    let mut operation = pool.begin().await?;
+    let allowed: bool =
+        query_scalar("SELECT allowed FROM gatekeep_permission_guard WHERE id = 1 FOR UPDATE")
+            .fetch_one(&mut *operation)
+            .await?;
+    let resolution = FactResolution::new(
+        KnownFacts::from_entries([(
+            FactId::new("allowed")?,
+            if allowed {
+                Presence::Present
+            } else {
+                Presence::Absent
+            },
+        )])?,
+        None,
+        OffsetDateTime::now_utc(),
+    )?;
+    let pending = authorizer.prepare_resolution(&prepared, &context, &resolution)?;
+    assert!(pending.decision().is_permit());
+    // A separate connection attempts a concurrent revocation while the guard is held.
+    let mut revocation = competing.begin().await?;
+    sqlx::query("SET LOCAL lock_timeout = '100ms'")
+        .execute(&mut *revocation)
+        .await?;
+    let blocked = sqlx::query("UPDATE gatekeep_permission_guard SET allowed = FALSE WHERE id = 1")
+        .execute(&mut *revocation)
+        .await;
+    assert!(
+        matches!(&blocked, Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03"))
+    );
+    revocation.rollback().await?;
+    sqlx::query("UPDATE gatekeep_permission_guard SET writes = writes + 1 WHERE id = 1")
+        .execute(&mut *operation)
+        .await?;
+    sink.record_decision_audit_in_transaction(&mut operation, pending.entry())
+        .await?;
+    operation.commit().await?;
+    sqlx::query("UPDATE gatekeep_permission_guard SET allowed = FALSE WHERE id = 1")
+        .execute(&pool)
+        .await?;
+    let (allowed, writes): (bool, i32) =
+        query_as("SELECT allowed, writes FROM gatekeep_permission_guard WHERE id = 1")
+            .fetch_one(&pool)
+            .await?;
+    assert!(!allowed);
+    assert_eq!(writes, 1);
+    let events: i64 = query_scalar("SELECT count(*) FROM dovecote_events")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(events, 1);
     Ok(())
 }

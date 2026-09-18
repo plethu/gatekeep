@@ -1,0 +1,20 @@
+[book]
+title = "Gatekeep"
+authors = ["Mari"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/plethu/gatekeep"
+site-url = "/gatekeep/"
+additional-js = ["docs/theme/navigation.js"]
+additional-css = ["docs/theme/accessibility.css"]
+
+[output.html.search]
+enable = true

@@ -38,6 +38,7 @@ impl Facts {
         for (fact, presence) in entries {
             facts.try_insert_known(fact, presence)?;
         }
+
         Ok(facts)
     }
 
@@ -55,6 +56,7 @@ impl Facts {
                 reason: "known facts cannot contain unknown presence",
             });
         }
+
         self.insert(fact, presence, None);
         Ok(())
     }
@@ -130,6 +132,35 @@ impl KnownFacts {
         Ok(self)
     }
 
+    /// Records an ordinary boolean check under its stable typed identity.
+    #[must_use]
+    pub fn with_bool<F: Fact>(mut self, value: bool) -> Self {
+        self.0.insert_typed::<F>(if value {
+            Presence::Present
+        } else {
+            Presence::Absent
+        });
+        self
+    }
+
+    /// Returns an explicitly supplied observation; omission remains distinct.
+    #[must_use]
+    pub fn observation(&self, fact: &FactId) -> Option<Presence> {
+        self.0.0.get(fact).map(|(presence, _)| *presence)
+    }
+
+    /// Returns the explicitly supplied observation for a typed fact.
+    #[must_use]
+    pub fn observed<F: Fact>(&self) -> Option<bool> {
+        self.observation(&FactId::from_trusted(F::ID.as_str()))
+            .map(|presence| presence == Presence::Present)
+    }
+
+    /// Borrows explicit observations in stable fact-identity order.
+    pub fn iter(&self) -> impl Iterator<Item = (&FactId, Presence)> {
+        self.0.iter()
+    }
+
     /// Returns a fact's presence, defaulting to absent when omitted.
     #[must_use]
     pub fn presence(&self, fact: &FactId) -> Presence {
@@ -150,6 +181,7 @@ impl<'de> Deserialize<'de> for KnownFacts {
                 ));
             }
         }
+
         Ok(Self(facts))
     }
 }
@@ -204,6 +236,12 @@ impl PartialFacts {
         self.0.presence(fact)
     }
 
+    /// Returns an explicitly supplied observation, including query-deferred unknowns.
+    #[must_use]
+    pub fn observation(&self, fact: &FactId) -> Option<Presence> {
+        self.0.0.get(fact).map(|(presence, _)| *presence)
+    }
+
     pub(crate) fn known_entries(&self) -> impl Iterator<Item = (&FactId, Presence)> {
         self.0
             .iter()
@@ -230,5 +268,24 @@ impl FromIterator<(FactId, Presence)> for PartialFacts {
         let mut facts = Self::new();
         facts.extend(iter);
         facts
+    }
+}
+
+/// Explicit observations available for validating selected resolution evidence.
+///
+/// Custom fact bundles must return `None` for omitted entries, never infer false.
+pub trait ObservationFacts {
+    /// Returns the actual supplied observation for this identity.
+    fn observation(&self, fact: &FactId) -> Option<Presence>;
+}
+
+impl ObservationFacts for KnownFacts {
+    fn observation(&self, fact: &FactId) -> Option<Presence> {
+        self.observation(fact)
+    }
+}
+impl ObservationFacts for PartialFacts {
+    fn observation(&self, fact: &FactId) -> Option<Presence> {
+        self.observation(fact)
     }
 }

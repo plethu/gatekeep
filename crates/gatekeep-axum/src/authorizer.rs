@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
 use gatekeep::{
-    AuditEntry, AuditSink, Context, Decision, DecisionAuditId, DecisionAuditOccurrence,
-    DecisionSummary, DecisiveClause, DenyShape, Effect, EffectKind, FactResolutionEvidence,
-    FactResolver, IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver, Policy,
-    PolicyAnchor, PolicyId, PolicyObserver, ReasonCatalog, ResolveError, SystemClock, evaluate,
-    required_facts,
+    AuditSink, Authorizer, Context, Decision, DecisionAuditOccurrence, DecisiveClause, DenyShape,
+    Effect, FactResolver, IdentityReasonCatalog, Lattice, NoopAuditSink, NoopPolicyObserver,
+    Policy, PolicyId, PolicyObserver, PreparedPolicy, ReasonCatalog,
 };
 use serde::Serialize;
 
@@ -25,23 +23,17 @@ pub struct Authorized<O> {
 
 /// Axum-friendly authorization boundary.
 pub struct Gatekeeper<R, A = NoopAuditSink, C = IdentityReasonCatalog, W = NoopPolicyObserver> {
-    resolver: Arc<R>,
-    audit_sink: Arc<A>,
+    authorizer: Authorizer<R, A, W>,
     reason_catalog: Arc<C>,
-    observer: Arc<W>,
     denial_response: DenialResponseConfig,
-    clock: Arc<dyn gatekeep::Clock>,
 }
 
 impl<R, A, C, W> Clone for Gatekeeper<R, A, C, W> {
     fn clone(&self) -> Self {
         Self {
-            resolver: Arc::clone(&self.resolver),
-            audit_sink: Arc::clone(&self.audit_sink),
+            authorizer: self.authorizer.clone(),
             reason_catalog: Arc::clone(&self.reason_catalog),
-            observer: Arc::clone(&self.observer),
             denial_response: self.denial_response.clone(),
-            clock: Arc::clone(&self.clock),
         }
     }
 }
@@ -55,12 +47,9 @@ impl<R> Gatekeeper<R> {
     #[must_use]
     pub fn unaudited(resolver: R) -> Self {
         Self {
-            resolver: Arc::new(resolver),
-            audit_sink: Arc::new(NoopAuditSink),
+            authorizer: Authorizer::unaudited(resolver),
             reason_catalog: Arc::new(IdentityReasonCatalog),
-            observer: Arc::new(NoopPolicyObserver),
             denial_response: DenialResponseConfig::default(),
-            clock: Arc::new(SystemClock),
         }
     }
 }
@@ -70,12 +59,9 @@ impl<R, A> Gatekeeper<R, A> {
     #[must_use]
     pub fn new(resolver: R, audit_sink: A) -> Self {
         Self {
-            resolver: Arc::new(resolver),
-            audit_sink: Arc::new(audit_sink),
+            authorizer: Authorizer::new(resolver, audit_sink),
             reason_catalog: Arc::new(IdentityReasonCatalog),
-            observer: Arc::new(NoopPolicyObserver),
             denial_response: DenialResponseConfig::default(),
-            clock: Arc::new(SystemClock),
         }
     }
 }
@@ -88,12 +74,9 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
         audit_sink: NextAudit,
     ) -> Gatekeeper<R, NextAudit, C, W> {
         Gatekeeper {
-            resolver: self.resolver,
-            audit_sink: Arc::new(audit_sink),
+            authorizer: self.authorizer.with_audit_sink(audit_sink),
             reason_catalog: self.reason_catalog,
-            observer: self.observer,
             denial_response: self.denial_response,
-            clock: self.clock,
         }
     }
 
@@ -104,12 +87,9 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
         reason_catalog: NextCatalog,
     ) -> Gatekeeper<R, A, NextCatalog, W> {
         Gatekeeper {
-            resolver: self.resolver,
-            audit_sink: self.audit_sink,
+            authorizer: self.authorizer,
             reason_catalog: Arc::new(reason_catalog),
-            observer: self.observer,
             denial_response: self.denial_response,
-            clock: self.clock,
         }
     }
 
@@ -120,12 +100,9 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
         observer: NextObserver,
     ) -> Gatekeeper<R, A, C, NextObserver> {
         Gatekeeper {
-            resolver: self.resolver,
-            audit_sink: self.audit_sink,
+            authorizer: self.authorizer.with_observer(observer),
             reason_catalog: self.reason_catalog,
-            observer: Arc::new(observer),
             denial_response: self.denial_response,
-            clock: self.clock,
         }
     }
 
@@ -143,7 +120,7 @@ impl<R, A, C, W> Gatekeeper<R, A, C, W> {
     where
         F: gatekeep::Clock + 'static,
     {
-        self.clock = Arc::new(clock);
+        self.authorizer = self.authorizer.with_clock(clock);
         self
     }
 }
@@ -172,51 +149,45 @@ where
     where
         O: Lattice + Serialize + Send + Sync,
     {
-        context
-            .validate_at(self.clock.now_utc())
-            .map_err(GatekeepAxumError::Context)
-            .map_err(GatekeepRejection::from_error)?;
-
-        let anchor = PolicyAnchor::new(
-            policy_id,
-            policy
-                .hash()
-                .map_err(GatekeepAxumError::PolicyHash)
-                .map_err(GatekeepRejection::from_error)?,
-        );
-
-        let required = required_facts(policy).into_iter().collect::<Vec<_>>();
-        let resolution = self
-            .resolver
-            .resolve_for_decision(&required, &context, self.clock.as_ref())
-            .await
-            .map_err(GatekeepAxumError::Resolve)
-            .map_err(GatekeepRejection::from_error)?;
-        // Capture receipt/decision time separately from the resolver's source
-        // observation time. The binding and freshness checks use this local
-        // decision boundary, while audit evidence retains the envelope's
-        // atomic `observed_at`.
-        let received_at = self.clock.now_utc();
-        context
-            .validate_at(received_at)
-            .map_err(GatekeepAxumError::Context)
-            .map_err(GatekeepRejection::from_error)?;
-        resolution
-            .validate_at(received_at)
-            .map_err(ResolveError::Resolution)
-            .map_err(GatekeepAxumError::Resolve)
-            .map_err(GatekeepRejection::from_error)?;
-        let fact_resolution = FactResolutionEvidence::from_resolution(&resolution)
-            .map_err(GatekeepAxumError::FactResolutionEvidence)
-            .map_err(GatekeepRejection::from_error)?;
-        let facts = resolution.facts();
-        let decision = evaluate(policy, facts);
-
-        let audit_occurrence = self
-            .observe_and_audit(&anchor, &decision, &context, fact_resolution)
+        let result = self
+            .authorizer
+            .authorize_policy(policy_id, policy, &context)
             .await
             .map_err(GatekeepRejection::from_error)?;
+        self.present(result, &context)
+    }
 
+    /// Authorizes a prepared policy with explicit completeness checks.
+    ///
+    /// # Errors
+    /// Returns a rejection on denial, omitted facts, invalid context or failed audit.
+    pub async fn authorize_prepared<O>(
+        &self,
+        policy: &PreparedPolicy<O>,
+        context: Context,
+    ) -> Result<Authorized<O>, GatekeepRejection<R::Error, A::Error>>
+    where
+        O: Lattice + Serialize + Send + Sync,
+    {
+        let result = self
+            .authorizer
+            .authorize(policy, &context)
+            .await
+            .map_err(GatekeepRejection::from_error)?;
+        self.present(result, &context)
+    }
+}
+
+impl<R, A, C: ReasonCatalog, W> Gatekeeper<R, A, C, W> {
+    fn present<O: Serialize + Clone, Resolve, Audit>(
+        &self,
+        result: gatekeep::AuditedDecision<O>,
+        context: &Context,
+    ) -> Result<Authorized<O>, GatekeepRejection<Resolve, Audit>> {
+        let gatekeep::AuditedDecision {
+            decision,
+            audit_occurrence,
+        } = result;
         match decision.effect.clone() {
             Effect::Permit(outcome) => Ok(Authorized {
                 outcome,
@@ -238,71 +209,38 @@ where
             }
         }
     }
-
-    async fn observe_and_audit<O>(
-        &self,
-        anchor: &PolicyAnchor,
-        decision: &Decision<O>,
-        context: &Context,
-        fact_resolution: gatekeep::FactResolutionEvidence,
-    ) -> Result<DecisionAuditOccurrence, GatekeepAxumError<R::Error, A::Error>>
-    where
-        O: Serialize + Clone + Sync,
-    {
-        let supplied_occurrence = context.decision_audit_occurrence().cloned();
-        let occurrence = supplied_occurrence
-            .map_or_else(
-                || DecisionAuditOccurrence::new(DecisionAuditId::generate(), self.clock.now_utc()),
-                |value| {
-                    DecisionAuditOccurrence::new(
-                        value.decision_audit_id().clone(),
-                        value.occurred_at(),
-                    )
-                },
-            )
-            .map_err(GatekeepAxumError::Occurrence)?;
-        let trace = decision.to_trace().map_err(GatekeepAxumError::Trace)?;
-        let entry = AuditEntry::new(
-            occurrence.clone(),
-            context.request_id().cloned(),
-            anchor.clone(),
-            EffectKind::from(decision),
-            decision.obligations.clone(),
-            trace.consulted.clone(),
-            trace.decisive.clone(),
-            decision.denial_reason().map_err(GatekeepAxumError::Trace)?,
-            trace,
-            context.binding().clone(),
-            fact_resolution,
-            context.tenant().clone(),
-            context.principal().clone(),
-            context.subjects().clone(),
-            context.locale().clone(),
-        )
-        .map_err(GatekeepAxumError::AuditEntry)?;
-
-        let summary = DecisionSummary {
-            anchor: anchor.clone(),
-            effect: EffectKind::from(decision),
-            obligations: decision.obligations.clone(),
-            consulted: decision.trace.consulted.clone(),
-        };
-        self.audit_sink
-            .record(&entry)
-            .await
-            .map_err(|source| GatekeepAxumError::Audit {
-                occurrence: occurrence.clone(),
-                source,
-            })?;
-
-        self.observer.observe(&summary);
-        Ok(occurrence)
-    }
 }
 
 const fn denial_shape<O>(decision: &Decision<O>) -> DenyShape {
     match &decision.trace.decisive {
         DecisiveClause::Deny { shape, .. } => *shape,
         DecisiveClause::Permit { .. } => DenyShape::Forbidden,
+    }
+}
+
+impl<R, A, C, W> Gatekeeper<R, A, C, W>
+where
+    R: gatekeep::ResourcePolicy,
+    A: AuditSink,
+    C: ReasonCatalog + Send + Sync,
+    W: PolicyObserver,
+{
+    /// Authorizes an application-typed operation and applies HTTP denial presentation.
+    ///
+    /// # Errors
+    /// Returns hidden/forbidden denial or typed source, evidence and audit failures.
+    pub async fn authorize_resource(
+        &self,
+        action: &R::Action,
+        principal: &R::Principal,
+        resource: &R::Resource,
+        context: Context,
+    ) -> Result<Authorized<R::Outcome>, GatekeepRejection<R::Error, A::Error>> {
+        let result = self
+            .authorizer
+            .authorize_resource(action, principal, resource, &context)
+            .await
+            .map_err(GatekeepRejection::from_error)?;
+        self.present(result, &context)
     }
 }

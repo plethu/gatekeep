@@ -4,63 +4,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
-use thiserror::Error;
 
 use crate::DenialResponse;
 
-/// Error produced while resolving, evaluating, tracing, or auditing a decision.
-#[derive(Debug, Error)]
-pub enum GatekeepAxumError<Resolve, Audit> {
-    /// The request context failed tenant-binding validation before facts were
-    /// resolved.
-    #[error(transparent)]
-    Context(#[from] gatekeep::ContextError),
-    /// Policy hashing failed before the decision could be anchored.
-    #[error("failed to hash policy")]
-    PolicyHash(#[source] postcard::Error),
-    /// Fact resolution failed before evaluation.
-    #[error(transparent)]
-    Resolve(#[from] gatekeep::ResolveError<Resolve>),
-    /// Resolved fact-set evidence could not be serialized.
-    #[error(transparent)]
-    FactResolutionEvidence(#[from] gatekeep::FactResolutionEvidenceError),
-    /// The current audit entry failed its tenant-binding invariants.
-    #[error(transparent)]
-    AuditEntry(#[from] gatekeep::AuditEntryError),
-    /// Trace serialization failed after evaluation.
-    #[error(transparent)]
-    Trace(#[from] gatekeep::TraceError),
-    /// The captured decision occurrence could not cross the Dovecote time
-    /// boundary without changing its meaning.
-    #[error(transparent)]
-    Occurrence(#[from] gatekeep::DecisionAuditOccurrenceError),
-    /// Audit recording failed.
-    #[error("audit sink failed")]
-    Audit {
-        /// Reusable identity and occurrence time for an ambiguous retry.
-        occurrence: gatekeep::DecisionAuditOccurrence,
-        /// Sink-specific failure.
-        #[source]
-        source: Audit,
-    },
-}
-
-impl<Resolve, Audit> GatekeepAxumError<Resolve, Audit> {
-    /// Returns the occurrence that was used when audit persistence failed.
-    #[must_use]
-    pub const fn audit_occurrence(&self) -> Option<&gatekeep::DecisionAuditOccurrence> {
-        match self {
-            Self::Audit { occurrence, .. } => Some(occurrence),
-            Self::Context(_)
-            | Self::PolicyHash(_)
-            | Self::Resolve(_)
-            | Self::FactResolutionEvidence(_)
-            | Self::AuditEntry(_)
-            | Self::Trace(_)
-            | Self::Occurrence(_) => None,
-        }
-    }
-}
+/// Framework-independent authorization failure.
+pub use gatekeep::AuthorizationError as GatekeepAxumError;
 
 /// Axum rejection returned by [`crate::Gatekeeper::authorize`].
 #[derive(Debug)]

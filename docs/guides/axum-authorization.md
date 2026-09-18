@@ -17,7 +17,7 @@ An Axum integration usually has three parts:
 3. Attach an audit sink when decisions must be durable.
 
 For durable Postgres audit, start with the compile-checked
-[`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs) example.
+[`axum-durable-audit`](https://github.com/plethu/gatekeep/blob/main/examples/axum-durable-audit/src/main.rs) example.
 It covers the application-owned `FactResolver`, Dovecote schema check, and
 `PgDovecoteAudit` construction; the workspace builds it as part of its checks.
 

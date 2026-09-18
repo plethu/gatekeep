@@ -7,6 +7,7 @@ members = [
   "crates/gatekeep-sqlx",
   "examples/axum-authorized-list",
   "examples/axum-durable-audit",
+  "examples/record-service",
   "examples/axum-keepsake-authorized-list",
   "examples/authorized-list-support",
   "tests/repository-docs",

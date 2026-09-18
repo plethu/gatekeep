@@ -1,0 +1,11 @@
+CREATE TABLE records (tenant TEXT NOT NULL, id TEXT NOT NULL, summary TEXT NOT NULL, shared_notes TEXT NOT NULL, private_notes TEXT NOT NULL, PRIMARY KEY (tenant, id));
+CREATE TABLE record_access (tenant TEXT NOT NULL, person TEXT NOT NULL, record TEXT NOT NULL, enabled BOOLEAN NOT NULL, owner BOOLEAN NOT NULL, shared BOOLEAN NOT NULL, released BOOLEAN NOT NULL, emergency_until INTEGER, PRIMARY KEY (tenant, person, record));
+INSERT INTO records VALUES ('demo', 'one', 'Synthetic released summary', 'Synthetic shared notes', 'Synthetic private notes');
+INSERT INTO records VALUES ('other', 'one', 'Other tenant summary', 'Other shared notes', 'Other private notes');
+INSERT INTO record_access VALUES ('demo', 'owner', 'one', 1, 1, 0, 0, NULL);
+INSERT INTO record_access VALUES ('demo', 'participant', 'one', 1, 0, 1, 0, 4102444800);
+INSERT INTO record_access VALUES ('demo', 'parent', 'one', 1, 0, 0, 1, NULL);
+INSERT INTO record_access VALUES ('demo', 'admin', 'one', 1, 0, 0, 0, NULL);
+INSERT INTO record_access VALUES ('demo', 'emergency', 'one', 1, 0, 0, 0, 4102444800);
+INSERT INTO record_access VALUES ('demo', 'expired', 'one', 1, 0, 0, 0, 1);
+INSERT INTO record_access VALUES ('demo', 'disabled', 'one', 0, 1, 1, 1, 4102444800);

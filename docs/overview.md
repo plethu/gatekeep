@@ -35,8 +35,9 @@ Most integrations follow this order:
    named subjects.
 2. Resolve the facts needed by the policy.
 3. Evaluate the policy with `KnownFacts`.
-4. Return the permit outcome or map the denial reason to the response.
-5. Record an audit entry before the request boundary returns.
+4. Persist the decision at the required audit boundary.
+5. Inspect the outcome and obligations, then disclose allowed data or return the
+   denial response.
 
 List endpoints use the same policy differently. Mark request-known facts as
 present or absent, leave row-level facts unknown, and lower the residual policy

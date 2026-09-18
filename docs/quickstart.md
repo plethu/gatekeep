@@ -1,65 +1,52 @@
-# Quickstart
+# Your first gate
 
-This example defines one fact, one graded outcome, and one policy. The policy
-says that a case owner may read the full case.
+These examples use the unreleased checked-authoring APIs in this checkout.
+For the published 4.x API, start with [installation](installation.md).
+
+
+An ownership check needs one named fact and a permit/deny policy. The check is
+ordinary Rust; its stable name is what appears in a decision trace.
 
 ```rust
-use gatekeep::{
-    condition, evaluate, policy, DecisiveClause, Effect, Fact, GatekeepResult,
-    KnownFacts, Lattice, ReasonCode, StaticFactId,
-};
+use gatekeep::{condition, evaluate, policy, Fact, KnownFacts, StaticFactId};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
-enum ReadAccess {
-    Redacted,
-    Full,
+struct Owner;
+impl Fact for Owner {
+    const ID: StaticFactId = StaticFactId::new("record.owner");
 }
 
-impl Lattice for ReadAccess {
-    fn meet(&self, other: &Self) -> Self { (*self).min(*other) }
-    fn join(&self, other: &Self) -> Self { (*self).max(*other) }
-    fn top() -> Self { Self::Full }
-    fn bottom() -> Self { Self::Redacted }
-}
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let may_read = policy::grant_clause((), condition::has::<Owner>())
+    .try_labeled("owner-read")?
+    .try_reason("not-owner")?
+    .into_policy();
 
-struct CaseOwner;
-
-impl Fact for CaseOwner {
-    const ID: StaticFactId = StaticFactId::new("case_owner");
-}
-
-fn main() -> GatekeepResult<()> {
-    let policy = policy::grant(ReadAccess::Full, condition::has::<CaseOwner>())
-        .try_labeled("owner_full_read")?
-        .try_reason("not_case_owner")?;
-
-    let permitted = evaluate(&policy, &KnownFacts::new().with_present::<CaseOwner>());
-    assert_eq!(permitted.effect, Effect::Permit(ReadAccess::Full));
-
-    let denied = evaluate(&policy, &KnownFacts::new());
-    assert_eq!(denied.effect, Effect::Deny);
-
-    if let DecisiveClause::Deny { reason, unsatisfied, .. } = &denied.trace.decisive {
-        assert_eq!(reason.as_ref().map(ReasonCode::as_str), Some("not_case_owner"));
-        assert_eq!(unsatisfied.len(), 1);
-    }
-
-    Ok(())
-}
+let actor_id = "alex";
+let owner_id = "alex";
+let facts = KnownFacts::new().with_bool::<Owner>(actor_id == owner_id);
+let decision = evaluate(&may_read, &facts);
+assert!(decision.is_permit());
+assert_eq!(facts.observed::<Owner>(), Some(true));
+# Ok(())
+# }
 ```
 
-The outcome type belongs to the application. Gatekeep only requires the
-`Lattice` implementation so composed policies can combine outcomes.
+`()` is the outcome for an ordinary gate. You can add
+[disclosure tiers](concepts/lattice-outcomes.md) when the application needs them.
+A false observation is recorded explicitly. The pure evaluator still treats an
+omitted fact as absent; the checked authorizer rejects omissions instead.
 
-The fact type also belongs to the application. A request handler, resolver, or
-test decides whether `CaseOwner` is present. Gatekeep records that the policy
-consulted `case_owner` and returns the reason code from the denied grant.
+`evaluate` is a pure function. It does not authenticate anyone, read a database,
+or persist its trace. Use it in policy tests and capability previews. A preview
+is not authorization for a later operation.
 
-## Next Steps
+For a request boundary, prepare the policy once and use `Authorizer::authorize`
+or Axum's `Gatekeeper::authorize_prepared`. Those paths validate the context,
+resolve every required check, check freshness, and await the configured audit
+sink. A source failure remains an error, including under negated conditions.
 
-Read [Combining permit outcomes](concepts/lattice-outcomes.md) before adding roles, tiers, scopes, or redaction levels.
-Then wire the same policy into an adapter:
-
-- `Axum Authorization` for request boundaries
-- `SQLx List Filtering` for list endpoints
-- `Durable Audit` for stored decision records
+Continue with [resource policies](guides/resource-policies.md),
+[required audit and retries](guides/checked-authorization.md), or the
+[runnable record service](guides/record-service.md). The advanced paths are
+[SQL list filtering](guides/sqlx-list-filtering.md) and
+[relation lifecycle](relation-lifecycle-contract.md).

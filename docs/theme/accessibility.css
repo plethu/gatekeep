@@ -1,0 +1,24 @@
+/* Keep the upstream reading layout; make focus and reduced motion explicit. */
+:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .sidebar, .page-wrapper {
+        transition: none;
+        scroll-behavior: auto;
+    }
+}
+.skip-to-content {
+    position: fixed;
+    inset-block-start: 0.5rem;
+    inset-inline-start: 0.5rem;
+    z-index: 1000;
+    padding: 0.75rem;
+    color: var(--fg);
+    background: var(--bg);
+    transform: translateY(-200%);
+}
+.skip-to-content:focus-visible {
+    transform: none;
+}

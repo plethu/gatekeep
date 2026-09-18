@@ -31,3 +31,7 @@ mod authorization_model_doctests {}
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/concepts/decisions-and-audit.md")]
 mod decision_audit_doctests {}
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/installation.md")]
+mod installation_doctests {}

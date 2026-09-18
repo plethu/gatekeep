@@ -505,3 +505,16 @@ enum TestError {
     #[error("expected a JSON object")]
     ExpectedObject,
 }
+
+#[test]
+fn schema_one_records_keep_their_original_json_and_evidence_meaning() -> Result<(), TestError> {
+    let decision = evaluate(&policy::permit(Access::Full), &KnownFacts::new());
+    let entry = current_entry("historical-current", &decision)?;
+    let mut old = serde_json::to_value(entry)?;
+    old["schema_version"] = 1.into();
+    let decoded: AuditEntry = serde_json::from_value(old.clone())?;
+    assert_eq!(decoded.schema_version(), 1);
+    assert!(decoded.fact_resolution().observations().is_empty());
+    assert_eq!(serde_json::to_value(decoded)?, old);
+    Ok(())
+}

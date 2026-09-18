@@ -1,6 +1,7 @@
 //! Axum authorization adapter tests.
 
 mod support;
+use std::error::Error as StdError;
 
 use axum::{
     Router,
@@ -526,6 +527,7 @@ impl gatekeep::AuditSink for BlockingAudit {
         if let Some(release) = release {
             let _ = release.await;
         }
+
         self.completed.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -547,4 +549,92 @@ async fn hidden_handler(
         .authorize(state.policy_id, &state.policy, state.context)
         .await?;
     Ok("ok")
+}
+
+#[tokio::test]
+async fn prepared_negation_requires_an_explicit_negative_observation()
+-> Result<(), Box<dyn StdError>> {
+    let prepared = gatekeep::PreparedPolicy::new(
+        PolicyId::new("not_reader")?,
+        policy::grant_clause((), condition::not(condition::has::<CaseReader>())).into_policy(),
+    )?;
+    let audit = RecordingAudit::default();
+    let missing = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new(),
+        },
+        audit.clone(),
+    );
+    let result = missing.authorize_prepared(&prepared, context()?).await;
+    assert!(matches!(
+        result,
+        Err(GatekeepRejection::Error(GatekeepAxumError::Resolve(
+            ResolveError::MissingFact(_)
+        )))
+    ));
+    assert!(audit.entries()?.is_empty());
+    let explicit = Gatekeeper::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_bool::<CaseReader>(false),
+        },
+        audit.clone(),
+    );
+    assert!(
+        explicit
+            .authorize_prepared(&prepared, context()?)
+            .await
+            .is_ok()
+    );
+    assert_eq!(audit.entries()?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn framework_and_http_boundaries_produce_identical_audit_records()
+-> Result<(), Box<dyn StdError>> {
+    let context = context()?;
+    let now = OffsetDateTime::now_utc();
+    let context = context.with_decision_audit_occurrence(DecisionAuditOccurrence::new(
+        DecisionAuditId::generate(),
+        now,
+    )?);
+    let prepared = gatekeep::PreparedPolicy::new(PolicyId::new("read")?, read_policy()?)?;
+    assert_eq!(prepared.anchor().policy_hash(), &prepared.policy().hash()?);
+    let core_sink = RecordingAudit::default();
+    let http_sink = RecordingAudit::default();
+    let resolver = StaticResolver {
+        facts: KnownFacts::new().with_bool::<CaseReader>(true),
+    };
+    let core =
+        gatekeep::Authorizer::new(resolver.clone(), core_sink.clone()).with_clock(move || now);
+    let http = Gatekeeper::new(resolver, http_sink.clone()).with_clock(move || now);
+    let decision = core.authorize(&prepared, &context).await?;
+    let response = http.authorize_prepared(&prepared, context).await;
+    assert!(response.is_ok());
+    assert_eq!(decision.decision.outcome(), Some(&Access::Full));
+    assert_eq!(core_sink.entries()?, http_sink.entries()?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn frozen_retry_preserves_the_complete_event() -> Result<(), Box<dyn StdError>> {
+    let audit = FailOnceAudit::default();
+    let authorizer = gatekeep::Authorizer::new(
+        StaticResolver {
+            facts: KnownFacts::new().with_bool::<CaseReader>(true),
+        },
+        audit.clone(),
+    );
+    let prepared = gatekeep::PreparedPolicy::new(PolicyId::new("read")?, read_policy()?)?;
+    let pending = authorizer.prepare(&prepared, &context()?).await?;
+    let frozen = serde_json::to_vec(pending.entry())?;
+    assert!(authorizer.persist_pending(&pending).await.is_err());
+    let decision = authorizer.persist_pending(&pending).await?;
+    assert_eq!(decision.decision.outcome(), Some(&Access::Full));
+    assert_eq!(serde_json::to_vec(pending.entry())?, frozen);
+    assert_eq!(
+        audit.entries()?,
+        vec![pending.entry().clone(), pending.entry().clone()]
+    );
+    Ok(())
 }

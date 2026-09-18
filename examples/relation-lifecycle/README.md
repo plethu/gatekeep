@@ -4,8 +4,8 @@ This synthetic platform example applies a directed “Alice blocks Bob” relati
 checks both directions before a new user interaction, and gives an individual
 account restriction its own deadline. Keepsake lifecycle state, Gatekeep policy
 evaluation, application records and Dovecote events share one PostgreSQL transaction.
-It uses local source dependencies across the three sibling checkouts. It is
-not verification against a published Keepsake 6 / gatekeep-keepsake 5 release.
+It uses local source dependencies across the three sibling checkouts. Use the
+sibling revisions pinned in `.github/workflows/ci.yml` to match its lockfile.
 
 Use a **dedicated disposable database**, with the schema owned by the fixture
 role. Setup installs schemas and adds a fresh synthetic tenant on every run;

@@ -1,6 +1,7 @@
 //! Fluent catalog integration tests.
 
-use std::collections::BTreeMap;
+use gatekeep::policy;
+use std::{collections::BTreeMap, error::Error as StdError};
 
 use gatekeep::{DenialReason, DenyShape, FactId, Locale, ParamKey, ReasonCode, ReasonValue};
 use gatekeep_fluent::{FluentCatalog, FluentCatalogError};
@@ -121,6 +122,30 @@ generic-not-found = Not found.",
     assert_eq!(
         catalog.try_render_reason(&hidden_reason("case-read-denied")?, &Locale::new("en-US")?),
         Some("Not found.".to_owned())
+    );
+    Ok(())
+}
+
+#[test]
+fn coverage_reports_exact_locale_gaps_even_with_runtime_fallback() -> Result<(), Box<dyn StdError>>
+{
+    let policy = gatekeep::PreparedPolicy::new(
+        gatekeep::PolicyId::new("read")?,
+        policy::grant_clause((), gatekeep::Condition::Never)
+            .try_reason("read-denied")?
+            .into_policy(),
+    )?;
+    let catalog = FluentCatalog::new()
+        .with_fallback_locale("en")?
+        .with_resource("en", "read-denied = Denied")?;
+    assert!(
+        catalog
+            .missing_reasons(&policy, &Locale::new("en")?)
+            .is_empty()
+    );
+    assert_eq!(
+        catalog.missing_reasons(&policy, &Locale::new("cy")?),
+        vec!["read-denied"]
     );
     Ok(())
 }

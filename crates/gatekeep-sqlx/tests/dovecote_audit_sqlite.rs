@@ -480,3 +480,23 @@ enum TestError {
     #[error("expected a JSON object")]
     ExpectedObject,
 }
+
+#[tokio::test]
+async fn oversized_record_is_rejected_before_storage() -> Result<(), TestError> {
+    let pool = database().await?;
+    let sink = SqliteDovecoteAudit::new(pool.clone(), "https://audit.example.test/gatekeep")?;
+    let mut wire = serde_json::to_value(audit_entry()?)?;
+    wire["request_id"] = serde_json::Value::String("x".repeat(1_048_577));
+    let entry: AuditEntry = serde_json::from_value(wire)?;
+    assert!(matches!(
+        sink.record_decision_audit(&entry).await,
+        Err(gatekeep_sqlx::SqliteDovecoteAuditError::Event(
+            gatekeep_sqlx::DecisionAuditEventError::PayloadTooLarge
+        ))
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM dovecote_events")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(count, 0);
+    Ok(())
+}

@@ -1,60 +1,49 @@
 # Contributing
 
-Gatekeep is stable infrastructure for in-process authorization. The core crate
-stays pure and synchronous; adapters handle Axum, SQLx, Fluent, and Keepsake
-integration at the application boundary.
+Gatekeep keeps deterministic evaluation in core and application integration in
+its adapters. Public APIs, examples and durable record formats are part of the
+library contract.
 
-## Before you open a PR
+## Checks
 
-Install the pinned project tools once:
+Install the pinned tools and run the shared local/CI check:
 
 ```sh
 mise install
-```
-
-Run the local gates:
-
-```sh
 mise run check
 ```
 
-When a change touches SQLx, migrations, or database queries, also run:
+`check` runs formatting, spelling, dependency checks, structural rules, Clippy,
+workspace tests and doctests, strict rustdoc, isolated consumer builds and docs
+links. Its implementation lives in `scripts/check-project-gates.sh`. Run
+`mise run fmt` to format Rust and TOML, or `mise tasks` to list commands.
 
-```sh
-mise run test-db
-```
+For SQLx, migration or database-query changes, also run `mise run test-db`.
+See [structural checks](tools/ast-grep/README.md) for the Rust rules.
+The pinned toolchain checks the minimum Rust version declared in `Cargo.toml`;
+raising that minimum is a deliberate compatibility decision.
 
-Dependency changes must also pass the RustSec-backed cargo-deny checks:
+Production-only lint restrictions exclude test harnesses, where assertions and
+fixture arithmetic are expected. `unreachable_pub` also conflicts with Clippy's
+private test-module visibility advice. The existing `AuditEntry::new` argument
+count exception preserves its published signature; prefer `from_decision` for
+new callers. Cargo-deny checks dependency policy even where upstream libraries
+require multiple versions of a crate.
 
-```sh
-just supply-chain
-```
+## Documentation and API changes
 
-The structural Rust checks are documented in
-[`tools/ast-grep/README.md`](tools/ast-grep/README.md). Run them on their own
-with `mise run lint-structure`.
+[Human guides](docs/README.md) live in `docs`; API detail belongs in rustdoc.
+Update examples when changing public behavior. `mise exec -- just docs-site`
+builds the searchable book in `target/book` from those same Markdown files.
 
-Run `mise run fmt` to format Rust and TOML across the workspace and standalone consumer and `mise tasks` to list the
-available project commands.
+`mise exec -- just check-public-api minor` compares public APIs against explicit
+published baselines. See [versioning](docs/operations/versioning.md) for major
+changes and durable-format compatibility.
 
-The canonical gate includes selected all-target and production Clippy restrictions,
-Taplo, typos, reviewed dependency ownership through cargo-machete, strict rustdoc,
-cargo-deny, structural checks, and the established Cargo test/doctest lane.
-[`docs/maintainability.md`](docs/maintainability.md) records their exact scope and
-the remaining published compatibility exception.
-
-CI runs `mise run check` on pull requests via GitHub Actions. The same command
-is the local release gate.
-
-## Stability
-
-From 1.0 onward, public API and audit schema changes follow semver. Open an
-issue before proposing breaking changes.
-
-## Docs
-
-Human guides live in [`docs/README.md`](docs/README.md). API detail belongs in
-rustdoc and on docs.rs. Update both when you change public behaviour.
+The book build applies checked compatibility transforms for keyboard sidebar
+activation, search input and focus. Review them when updating mdBook. Exercise
+keyboard navigation, search, reduced motion, narrow layouts and screen-reader
+use when changing the documentation theme.
 
 ## Issues and pull requests
 
@@ -75,53 +64,40 @@ someone present on the other side of it.
 
 ## Relation source integration
 
-The standalone `examples/relation-lifecycle` consumer composes local Gatekeep,
-Keepsake 6 and Dovecote sources. Keep the checkouts side-by-side as `gatekeep-rs`,
-`keepsake-rs` and `carrier`. From the Gatekeep repository, run:
+The standalone `examples/relation-lifecycle` consumer requires sibling checkouts
+named `gatekeep-rs`, `keepsake-rs` and `carrier`. Use the revisions pinned in
+`.github/workflows/ci.yml` to match its lockfile.
 
 ```sh
 mise exec -- just check-relation-consumer
 GATEKEEP_RELATION_CONSUMER=1 mise run check
 ```
 
-The first command checks formatting, strict Clippy, test compilation and the
-consumer's dependency graph against the root cargo-deny policy. The second adds
-those checks to the canonical root gate. The default gate explicitly reports
-that this source-integration lane is skipped.
+The first command checks formatting, strict Clippy, test compilation and dependency
+policy. The second includes those checks in the root gate. For the live test,
+set `DATABASE_URL` to a dedicated disposable PostgreSQL database and run
+`mise exec -- just test-relation-consumer`. See the
+[example README](examples/relation-lifecycle/README.md) for setup and transaction
+semantics. CI runs this source integration separately from registry consumers.
 
-Until Keepsake 6 is available from the registry, the root gate also needs a
-local dependency override. Merge this into `.cargo/config.toml` without replacing
-any existing configuration, and keep the override uncommitted:
+## Package archives and performance
 
-```toml
-[patch.crates-io]
-keepsake = { path = "../keepsake-rs/crates/keepsake" }
+To check the actual archive contents before a coordinated release:
+
+```sh
+mise exec -- cargo package --allow-dirty --no-verify \
+  -p gatekeep -p gatekeep-axum -p gatekeep-fluent \
+  -p gatekeep-keepsake -p gatekeep-sqlx
+mise exec -- python3 scripts/check-consumers.py --packaged
 ```
 
-The standalone consumer already declares its local overrides and does not need
-this additional root configuration.
+The consumer check extracts the archives and builds them with registry
+dependencies. This supports unpublished coordinated versions without requiring
+sibling sources; verify registry-only resolution after publication as well.
 
-For the live transaction proof, set `DATABASE_URL` to a dedicated disposable
-PostgreSQL database and run `mise exec -- just test-relation-consumer`. The check
-fails immediately if that variable is absent; it does not start or reset an
-application database or print the connection string.
-
-The local canonical gate keeps source integration opt-in because it requires
-sibling checkouts. Pull-request and main-branch CI always run the separate
-`relation-consumer` job, which calls the reusable `relation consumer` workflow
-with full reviewed Keepsake and Dovecote commit IDs recorded in
-`.github/workflows/ci.yml`. That job checks out the matching siblings and runs
-the same check owner against PostgreSQL 17.11. The workflow also supports manual
-dispatch with explicit sibling commits. Update those pins deliberately when the
-source integration changes; a green source job and the ordinary canonical/
-database job are both required release evidence.
-
-Dovecote 0.2.1 remains the consumer's compatible published dependency minimum.
-The current local source lock records Dovecote 0.2.2, so the source workflow
-requires matching committed sibling revisions explicitly and invents no pending
-tag. A published-baseline package check is distinct from this local source lane.
-
-Current candidate versions, registry prerequisites and publication order are in
-[Versioning](docs/operations/versioning.md#coordinated-release-checks). A green
-source consumer job does not replace the ordinary canonical/database CI job or
-registry-only package checks after dependencies are published.
+Run `cargo bench -p gatekeep --bench authorization` for evaluator, trace, hash
+and preparation timings. Run `cargo bench -p gatekeep-example-record-service
+--bench data_access` for separate single/bulk metadata reads and SQL construction.
+Use `cargo build --timings` and `cargo tree -p gatekeep -e normal` to inspect
+build and dependency cost. Local in-memory timings are not network throughput
+measurements.

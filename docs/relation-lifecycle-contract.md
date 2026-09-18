@@ -1,15 +1,10 @@
 # Effective relation facts
 
-The existing resolver used persisted `applied` rows as presence facts. A stopped
-expiry worker therefore extended restrictions past their deadline. Keepsake
-already persists each assignment's expiry policy; only the apply command lacked
-an explicit override. No relationship graph or metadata convention is needed.
-
-The new core contract evaluates effective state through the existing evaluator,
-with an explicit authoritative observation. Unknown, stale or regressed time,
-disabled definitions and missing fulfillment evidence are typed unavailable
-outcomes, never fabricated permission or indefinite continued restriction.
-Reconciliation remains a separate durable audited transition.
+Relation facts use effective state at an explicit authoritative observation time.
+Unknown, stale or regressed time, disabled definitions and missing fulfillment
+evidence are typed unavailable outcomes, never fabricated permission or an
+indefinitely continued restriction. Reconciliation is a separate durable audited
+transition.
 
 Gatekeep's ordinary resolver uses its caller-supplied Clock as the authoritative
 time assertion and validates returned tenant, subject and relation scopes. It is
@@ -25,13 +20,6 @@ freshness policy. A denial changes no lifecycle or business state; an optional
 denial audit has a separately specified commit. Existing sessions are independent
 business records and do not change merely because a later admission is denied.
 
-Keepsake 6 adds an explicit command policy override and optional complete command
-occurrence on existing immutable audit events. Historical schema-4 events remain
-readable; absence of a command does not establish an exact retry receipt. The
-Gatekeep adapter is version 5 because it consumes Keepsake 6 and changes effective
-fact behavior. Other Gatekeep packages retain version 4. These source changes
-require local dependency overrides until the new packages are published.
-
 Disabled definitions suspend durable reconciliation. Effective evaluation still
 recognizes a due deadline or satisfied fulfillment using Keepsake's policy
 function. Before expiry, a disabled definition yields unavailable evidence.
@@ -45,7 +33,7 @@ fulfillment evidence to `KeepsakeRelationTarget::effective_presence`. The suppli
 `Clock` is an explicit application assertion of current authoritative time. For
 unknown/stale time classification use the composition helper's `ObservationTime`.
 
-See [the executable transaction consumer](../examples/relation-lifecycle/README.md).
+See [the executable transaction consumer](https://github.com/plethu/gatekeep/blob/main/examples/relation-lifecycle/README.md).
 
 `RelationSnapshot` binds absent observations to a tenant, subject and relation as
 well as checking any present assignment. Constructing one attests neither storage
@@ -53,9 +41,6 @@ completeness nor a transaction lock. `effective_presence` rejects scope substitu
 for both presence and absence. Ordinary resolver metadata identifies an effective
 snapshot and bounds known timed presence by its earliest expiry deadline; absence
 and manual relations still require current revalidation before a protected write.
-
-[Verification evidence](relation-lifecycle-verification.md) distinguishes local
-source/package testing from registry availability.
 
 `FulfillmentEvidence` retains the tenant and assignment identity alongside policy
 evidence. The transaction read binds these values; `effective_presence` rejects

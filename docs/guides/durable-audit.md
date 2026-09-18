@@ -14,7 +14,7 @@ gatekeep-sqlx = { version = "4.0", features = ["postgres"] }
 ```
 
 The compile-checked
-[`axum-durable-audit`](../../examples/axum-durable-audit/src/main.rs) example
+[`axum-durable-audit`](https://github.com/plethu/gatekeep/blob/main/examples/axum-durable-audit/src/main.rs) example
 shows the complete Postgres setup: an application-owned `FactResolver`, the
 Dovecote schema check, and `PgDovecoteAudit` attached through
 `Gatekeeper::new(resolver, audit)`. The workspace builds it as part of its

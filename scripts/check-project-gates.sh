@@ -14,7 +14,8 @@ Runs Gatekeep's canonical local project gates:
   5. cargo deny advisory, ban, license, and source checks
   6. cargo test --workspace --all-features
   7. strict documentation
-  8. standalone source-integration checks when GATEKEEP_RELATION_CONSUMER=1
+  8. isolated consumer features and documentation-site links
+  9. standalone source-integration checks when GATEKEEP_RELATION_CONSUMER=1
 EOF
 }
 
@@ -122,4 +123,9 @@ else
   echo "Standalone relation consumer source integration skipped; set GATEKEEP_RELATION_CONSUMER=1 with matching sibling sources (see CONTRIBUTING.md)."
 fi
 
+echo "== isolated consumer features =="
+python3 "$repo_root/scripts/check-consumers.py"
+echo "== documentation site and links =="
+python3 "$repo_root/scripts/build-docs.py"
+python3 "$repo_root/scripts/check-doc-links.py"
 echo "Gatekeep project gates passed."

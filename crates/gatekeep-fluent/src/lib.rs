@@ -59,6 +59,31 @@ impl FluentCatalog {
         }
     }
 
+    /// Lists policy reason identifiers missing from this exact locale.
+    ///
+    /// This is a coverage check, not a rendering attempt. Fallback locales do
+    /// not hide untranslated messages, and runtime Fluent arguments still need
+    /// their own scenario tests. Hidden denials continue to use generic text.
+    #[must_use]
+    pub fn missing_reasons<'a, O>(
+        &self,
+        policy: &'a gatekeep::PreparedPolicy<O>,
+        locale: &Locale,
+    ) -> Vec<&'a str> {
+        let bundle = self.bundles.get(locale.as_str());
+        policy
+            .inspect()
+            .reasons
+            .into_iter()
+            .filter(|reason| {
+                bundle
+                    .and_then(|bundle| bundle.get_message(reason))
+                    .and_then(|message| message.value())
+                    .is_none()
+            })
+            .collect()
+    }
+
     /// Sets the locale to try after the requested locale cannot render.
     ///
     /// # Errors
@@ -174,6 +199,7 @@ impl FluentCatalog {
         if reason.shape == DenyShape::Hidden {
             return self.render_hidden(locale);
         }
+
         self.try_render_reason(reason, locale)
             .unwrap_or_else(|| reason.code.as_str().to_owned())
     }

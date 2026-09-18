@@ -31,10 +31,10 @@ mod audit;
 mod fragment;
 
 pub use audit::{
-    DECISION_AUDIT_CONTENT_TYPE, DECISION_AUDIT_EVENT_TYPE, DEFAULT_AUDIT_STREAM,
-    DecisionAuditConfig, DecisionAuditConfigError, DecisionAuditDecodeError,
-    DecisionAuditEventError, LegacyDecisionAuditDecodeError, decode_decision_audit,
-    decode_legacy_decision_audit,
+    ATTEMPT_AUDIT_EVENT_TYPE, AttemptAuditEventError, DECISION_AUDIT_CONTENT_TYPE,
+    DECISION_AUDIT_EVENT_TYPE, DEFAULT_AUDIT_STREAM, DecisionAuditConfig, DecisionAuditConfigError,
+    DecisionAuditDecodeError, DecisionAuditEventError, LegacyDecisionAuditDecodeError,
+    decode_authorization_attempt, decode_decision_audit, decode_legacy_decision_audit,
 };
 #[cfg(feature = "mysql")]
 pub use audit::{MySqlDovecoteAudit, MySqlDovecoteAuditError};
@@ -177,6 +177,57 @@ where
             projection,
             tenant_column,
             backend: PhantomData,
+        }
+    }
+
+    /// Lists all query-deferred facts without a trusted SQL mapping.
+    /// Request facts already resolved by partial evaluation are not reported.
+    #[must_use]
+    pub fn unmapped_facts<O>(&self, residual: &ResidualPolicy<O>, cx: &Context) -> Vec<FactId>
+    where
+        P: SqlxFactPredicates<B>,
+    {
+        gatekeep::required_residual_facts(residual)
+            .into_iter()
+            .filter(|fact| self.predicates.predicate(fact, cx).is_none())
+            .collect()
+    }
+
+    /// Lowers a partial-evaluation result with tenant guards on filter and grade.
+    ///
+    /// Both resolved and pending policies use this path. Apply the filter before
+    /// counting or paginating. SQL lowering does not produce per-row audit traces.
+    ///
+    /// # Errors
+    /// Returns missing-mapping or non-total-grade errors. Obligations remain
+    /// application-owned prerequisites; a SQL projection does not execute them.
+    pub fn lower_result<O>(
+        &self,
+        result: &gatekeep::Residual<O>,
+        cx: &Context,
+    ) -> Result<Lowered<SqlxFragment<B>, SqlxFragment<B>>, LowerError>
+    where
+        P: SqlxFactPredicates<B>,
+        M: OutcomeProjection<B, O>,
+    {
+        match result {
+            gatekeep::Residual::Pending { residual, .. } => self.lower(residual, cx),
+            gatekeep::Residual::Resolved(decision) => {
+                let (filter, grade) = match &decision.effect {
+                    gatekeep::Effect::Permit(outcome) => (
+                        SqlxFragment::trusted("TRUE"),
+                        self.projection.constant(outcome)?,
+                    ),
+                    gatekeep::Effect::Deny => (
+                        SqlxFragment::trusted("FALSE"),
+                        SqlxFragment::trusted("NULL"),
+                    ),
+                };
+                Ok(Lowered {
+                    filter: self.enforce_tenant_filter(filter, cx),
+                    grade: self.enforce_tenant_projection(grade, cx),
+                })
+            }
         }
     }
 

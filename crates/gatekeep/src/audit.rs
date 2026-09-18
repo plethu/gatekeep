@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Current durable representation version for decision audit entries.
-pub const AUDIT_ENTRY_SCHEMA_VERSION: u16 = 1;
+pub const AUDIT_ENTRY_SCHEMA_VERSION: u16 = 2;
 
 /// Stable policy identity recorded with summaries and audit entries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -48,6 +48,7 @@ impl<'de> Deserialize<'de> for PolicyAnchor {
                 crate::POLICY_HASH_FORMAT_VERSION
             )));
         }
+
         Ok(Self {
             id: wire.id,
             hash: wire.hash,
@@ -92,6 +93,7 @@ impl PolicyAnchor {
                 actual: self.hash_version,
             });
         }
+
         Ok(())
     }
 }
@@ -205,7 +207,7 @@ impl<'de> Deserialize<'de> for AuditEntry {
         D: serde::Deserializer<'de>,
     {
         let wire = AuditEntryWire::deserialize(deserializer)?;
-        if wire.schema_version != AUDIT_ENTRY_SCHEMA_VERSION {
+        if !matches!(wire.schema_version, 1 | AUDIT_ENTRY_SCHEMA_VERSION) {
             return Err(D::Error::custom(format!(
                 "unsupported audit entry schema version {}; expected {}",
                 wire.schema_version, AUDIT_ENTRY_SCHEMA_VERSION
@@ -214,7 +216,7 @@ impl<'de> Deserialize<'de> for AuditEntry {
 
         let occurrence = DecisionAuditOccurrence::new(wire.decision_audit_id, wire.occurred_at)
             .map_err(D::Error::custom)?;
-        Self::new(
+        let mut entry = Self::new(
             occurrence,
             wire.request_id,
             wire.anchor,
@@ -231,7 +233,10 @@ impl<'de> Deserialize<'de> for AuditEntry {
             wire.subjects,
             wire.locale,
         )
-        .map_err(D::Error::custom)
+        .map_err(D::Error::custom)?;
+        entry.schema_version = wire.schema_version;
+        entry.validate_current().map_err(D::Error::custom)?;
+        Ok(entry)
     }
 }
 
@@ -346,6 +351,10 @@ impl LegacyAuditEntry {
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AuditEntryError {
+    /// Selected observations disagree with the trace or historical format.
+    #[error("invalid selected observation evidence")]
+    InvalidObservations,
+
     /// The entry uses a schema version this crate does not understand.
     #[error("unsupported audit entry schema version {actual}; expected {expected}")]
     UnsupportedSchemaVersion {
@@ -391,7 +400,49 @@ pub enum AuditEntryError {
     DenialReasonMismatch,
 }
 
+/// Failure while deriving a durable entry from a typed decision.
+#[derive(Debug, Error)]
+pub enum AuditConstructionError {
+    /// The outcome could not be converted into the durable trace.
+    #[error(transparent)]
+    Trace(#[from] crate::TraceError),
+    /// The assembled entry failed validation.
+    #[error(transparent)]
+    Entry(#[from] AuditEntryError),
+}
+
 impl AuditEntry {
+    /// Derives duplicated audit fields from the actual decision and request context.
+    ///
+    /// # Errors
+    /// Returns an error if trace serialization or current entry validation fails.
+    pub fn from_decision<O: Serialize + Clone>(
+        occurrence: DecisionAuditOccurrence,
+        anchor: PolicyAnchor,
+        decision: &Decision<O>,
+        context: &crate::Context,
+        evidence: FactResolutionEvidence,
+    ) -> Result<Self, AuditConstructionError> {
+        let trace = decision.to_trace()?;
+        Ok(Self::new(
+            occurrence,
+            context.request_id().cloned(),
+            anchor,
+            EffectKind::from(decision),
+            decision.obligations.clone(),
+            trace.consulted.clone(),
+            trace.decisive.clone(),
+            decision.denial_reason()?,
+            trace,
+            context.binding().clone(),
+            evidence,
+            context.tenant().clone(),
+            context.principal().clone(),
+            context.subjects().clone(),
+            context.locale().clone(),
+        )?)
+    }
+
     /// Constructs a current audit entry with a validated occurrence, binding,
     /// and fact-resolution evidence.
     ///
@@ -566,11 +617,30 @@ impl AuditEntry {
     /// unsupported, the binding names another tenant, evidence is invalid, or
     /// denormalized decision fields contradict one another.
     pub fn validate_current(&self) -> Result<(), AuditEntryError> {
-        if self.schema_version != AUDIT_ENTRY_SCHEMA_VERSION {
+        if !matches!(self.schema_version, 1 | AUDIT_ENTRY_SCHEMA_VERSION) {
             return Err(AuditEntryError::UnsupportedSchemaVersion {
                 expected: AUDIT_ENTRY_SCHEMA_VERSION,
                 actual: self.schema_version,
             });
+        }
+
+        if self.schema_version == 1 && !self.fact_resolution.observations().is_empty() {
+            return Err(AuditEntryError::InvalidObservations);
+        }
+
+        for observation in self.fact_resolution.observations() {
+            let expected = if observation.value() {
+                Presence::Present
+            } else {
+                Presence::Absent
+            };
+            if self
+                .consulted
+                .iter()
+                .any(|(fact, value)| fact == observation.fact() && *value != expected)
+            {
+                return Err(AuditEntryError::InvalidObservations);
+            }
         }
         DecisionAuditOccurrence::from_validated_parts(
             self.decision_audit_id.clone(),

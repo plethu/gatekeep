@@ -1,3 +1,4 @@
+use crate::FactObservation;
 use crate::{
     BindingProvenance, Clock, Context, EvidenceDigest, FactId, KnownFacts, PartialFacts,
     SubjectSlot,
@@ -17,6 +18,8 @@ pub struct FactResolution<F> {
     facts: F,
     metadata: Option<FactResolutionMetadata>,
     observed_at: time::OffsetDateTime,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    observations: Vec<crate::FactObservation>,
 }
 
 #[derive(Deserialize)]
@@ -24,18 +27,27 @@ struct FactResolutionWire<F> {
     facts: F,
     metadata: Option<FactResolutionMetadata>,
     observed_at: time::OffsetDateTime,
+    #[serde(default)]
+    observations: Vec<crate::FactObservation>,
 }
 
 impl<'de, F> Deserialize<'de> for FactResolution<F>
 where
-    F: Deserialize<'de>,
+    F: Deserialize<'de> + crate::ObservationFacts,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let wire = FactResolutionWire::deserialize(deserializer)?;
-        Self::new(wire.facts, wire.metadata, wire.observed_at).map_err(D::Error::custom)
+        FactObservation::match_all(&wire.observations, &wire.facts).map_err(D::Error::custom)?;
+        let mut resolution =
+            Self::new(wire.facts, wire.metadata, wire.observed_at).map_err(D::Error::custom)?;
+        resolution.observations = wire.observations;
+        resolution
+            .observations
+            .sort_by(|left, right| left.fact().cmp(right.fact()));
+        Ok(resolution)
     }
 }
 
@@ -65,10 +77,12 @@ impl<F> FactResolution<F> {
                 fresh_until,
             });
         }
+
         Ok(Self {
             facts,
             metadata,
             observed_at,
+            observations: Vec::new(),
         })
     }
 
@@ -104,6 +118,10 @@ impl<F> FactResolution<F> {
         &self,
         received_at: time::OffsetDateTime,
     ) -> Result<(), FactResolutionError> {
+        for observation in &self.observations {
+            observation.validate_at(received_at)?;
+        }
+
         if self.observed_at > received_at {
             return Err(FactResolutionError::ObservedInFuture {
                 observed_at: self.observed_at,
@@ -122,13 +140,37 @@ impl<F> FactResolution<F> {
                 fresh_until,
             });
         }
+
         Ok(())
     }
 
+    /// Selected bounded observations in stable fact order.
+    #[must_use]
+    pub fn observations(&self) -> &[crate::FactObservation] {
+        &self.observations
+    }
+
     /// Consumes the envelope and returns its facts and metadata.
+    /// Selected per-fact evidence is discarded; retain the envelope for audit.
     #[must_use]
     pub fn into_parts(self) -> (F, Option<FactResolutionMetadata>, time::OffsetDateTime) {
         (self.facts, self.metadata, self.observed_at)
+    }
+}
+
+impl FactResolution<KnownFacts> {
+    /// Attaches selected per-fact evidence, checking it against explicit facts.
+    ///
+    /// # Errors
+    /// Rejects duplicate identities, oversized bundles or conflicting values.
+    pub fn with_observations(
+        mut self,
+        mut observations: Vec<crate::FactObservation>,
+    ) -> Result<Self, crate::ObservationError> {
+        FactObservation::match_all(&observations, &self.facts)?;
+        observations.sort_by(|left, right| left.fact().cmp(right.fact()));
+        self.observations = observations;
+        Ok(self)
     }
 }
 
@@ -182,6 +224,8 @@ pub struct FactResolutionEvidence {
     observed_at: time::OffsetDateTime,
     fresh_until: Option<time::OffsetDateTime>,
     fact_set_digest: EvidenceDigest,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    observations: Vec<crate::FactObservation>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +235,8 @@ struct FactResolutionEvidenceWire {
     observed_at: time::OffsetDateTime,
     fresh_until: Option<time::OffsetDateTime>,
     fact_set_digest: EvidenceDigest,
+    #[serde(default)]
+    observations: Vec<crate::FactObservation>,
 }
 
 impl<'de> Deserialize<'de> for FactResolutionEvidence {
@@ -199,14 +245,19 @@ impl<'de> Deserialize<'de> for FactResolutionEvidence {
         D: serde::Deserializer<'de>,
     {
         let wire = FactResolutionEvidenceWire::deserialize(deserializer)?;
-        let evidence = Self {
+        let mut evidence = Self {
             source: wire.source,
             revision: wire.revision,
             observed_at: wire.observed_at,
             fresh_until: wire.fresh_until,
             fact_set_digest: wire.fact_set_digest,
+            observations: wire.observations,
         };
+        evidence
+            .observations
+            .sort_by(|left, right| left.fact().cmp(right.fact()));
         evidence.validate().map_err(D::Error::custom)?;
+        FactObservation::validate_all(&evidence.observations).map_err(D::Error::custom)?;
         Ok(evidence)
     }
 }
@@ -221,14 +272,15 @@ impl FactResolutionEvidence {
                 fresh_until,
             });
         }
+
         Ok(())
     }
 
     /// Digests a complete fact set while retaining only bounded evidence.
     ///
     /// The digest is over Gatekeep's deterministic fact representation. This
-    /// deliberately records a set-level reference; no raw fact values or
-    /// per-fact claims are included in the audit entry.
+    /// retains a set-level reference and any explicitly selected boolean
+    /// observations. Raw domain objects are never captured automatically.
     ///
     /// # Errors
     ///
@@ -237,6 +289,7 @@ impl FactResolutionEvidence {
     pub fn from_resolution(
         resolution: &FactResolution<KnownFacts>,
     ) -> Result<Self, FactResolutionEvidenceError> {
+        FactObservation::match_all(&resolution.observations, resolution.facts())?;
         let encoded = postcard::to_allocvec(resolution.facts())
             .map_err(FactResolutionEvidenceError::Serialization)?;
         let fact_set_digest = EvidenceDigest::new(*blake3::hash(&encoded).as_bytes());
@@ -256,7 +309,14 @@ impl FactResolutionEvidence {
             observed_at: resolution.observed_at(),
             fresh_until,
             fact_set_digest,
+            observations: resolution.observations.clone(),
         })
+    }
+
+    /// Selected bounded observations; empty for historical set-only evidence.
+    #[must_use]
+    pub fn observations(&self) -> &[crate::FactObservation] {
+        &self.observations
     }
 
     /// Returns the source reference for the resolved fact set.
@@ -293,6 +353,9 @@ impl FactResolutionEvidence {
 /// Failure while creating bounded fact-set evidence.
 #[derive(Debug, Error)]
 pub enum FactResolutionEvidenceError {
+    /// Selected evidence conflicts with the supplied resolution.
+    #[error(transparent)]
+    Observation(#[from] crate::ObservationError),
     /// Gatekeep's deterministic fact representation could not be serialized.
     #[error("resolved fact set could not be serialized for evidence")]
     Serialization(#[source] postcard::Error),

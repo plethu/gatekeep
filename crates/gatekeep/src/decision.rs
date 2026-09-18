@@ -35,6 +35,15 @@ pub struct Decision<O> {
 }
 
 impl<O> Decision<O> {
+    /// Borrows the granted outcome, or returns `None` for a denial.
+    #[must_use]
+    pub const fn outcome(&self) -> Option<&O> {
+        match &self.effect {
+            Effect::Permit(outcome) => Some(outcome),
+            Effect::Deny => None,
+        }
+    }
+
     /// Returns true when the decision is a permit.
     #[must_use]
     pub const fn is_permit(&self) -> bool {
