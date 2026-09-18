@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — core, Axum, Fluent and SQLx 5.0.0; Keepsake bridge 6.0.0
+## Core, Axum, Fluent and SQLx 5.0.0; Keepsake bridge 6.0.0 — 2026-09-18
 
 - Separates optional `QueryFactResolver` from point-only `FactResolver`.
 - Adds ordinary Rust resource policies, prepared policies and a shared checked

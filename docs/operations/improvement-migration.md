@@ -1,7 +1,7 @@
 # Checked authoring and evidence migration
 
-This checkout contains unreleased API and audit-format work. Do not install a
-future major version from the registry until its release is published.
+This guide covers the upgrade from Gatekeep 4 to 5 and from
+`gatekeep-keepsake` 5 to 6. Keepsake itself remains on version 6.
 
 Use `grant_clause(...).into_policy()` for new grants and `with_bool::<Fact>` for
 ordinary checks. Existing pure policies keep their evaluation semantics and

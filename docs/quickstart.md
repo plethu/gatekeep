@@ -1,6 +1,6 @@
 # Your first gate
 
-These examples use the unreleased checked-authoring APIs in this checkout.
+These examples use Gatekeep 5.
 For the published 4.x API, start with [installation](installation.md).
 
 An ownership check needs one named fact and a permit/deny policy. The check is

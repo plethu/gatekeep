@@ -4,15 +4,15 @@ Add the core crate first. Add adapters only where the application needs them.
 
 ```toml
 [dependencies]
-gatekeep = "4.0.1"
+gatekeep = "5.0"
 ```
 
 For an Axum request boundary:
 
 ```toml
 [dependencies]
-gatekeep = "4.0.1"
-gatekeep-axum = "4.0"
+gatekeep = "5.0"
+gatekeep-axum = "5.0"
 ```
 
 For SQLx list filtering or
@@ -21,16 +21,16 @@ choose the database feature used by the service:
 
 ```toml
 [dependencies]
-gatekeep = "4.0.1"
-gatekeep-sqlx = { version = "4.0.1", features = ["postgres"] }
+gatekeep = "5.0"
+gatekeep-sqlx = { version = "5.0", features = ["postgres"] }
 ```
 
 For localized denial messages:
 
 ```toml
 [dependencies]
-gatekeep = "4.0.1"
-gatekeep-fluent = "4.0"
+gatekeep = "5.0"
+gatekeep-fluent = "5.0"
 ```
 
 For entitlements or relation-backed facts stored in
@@ -38,17 +38,16 @@ For entitlements or relation-backed facts stored in
 
 ```toml
 [dependencies]
-gatekeep = "4.0.1"
-gatekeep-keepsake = "5.0"
+gatekeep = "5.0"
+gatekeep-keepsake = "6.0"
 keepsake = "6.0"
 ```
 
 These versioned examples use crates.io dependencies. They require
-no sibling checkouts or source overrides. The checked authoring/evidence APIs in
-this checkout are unreleased and will require a coordinated major upgrade; see
-[the migration notes](operations/improvement-migration.md).
+no sibling checkouts or source overrides. For an existing Gatekeep 4 application,
+follow [the migration notes](operations/improvement-migration.md).
 
-## First gate on the published version
+## First gate
 
 This example works with the registry dependency above:
 
@@ -61,12 +60,10 @@ let facts = KnownFacts::new().with_present::<Owner>();
 assert!(evaluate(&gate, &facts).is_permit());
 ```
 
-The [published Axum API](https://docs.rs/gatekeep-axum/4.0.0/gatekeep_axum/)
-and [SQLx audit API](https://docs.rs/gatekeep-sqlx/4.0.1/gatekeep_sqlx/)
-use the same required sink boundary. The new `with_bool`, `PreparedPolicy` and
-resource-policy examples need the unreleased checkout until its packages are
-published. The runnable record service requires this repository, but no sibling
-project checkout.
+The [published Axum API](https://docs.rs/gatekeep-axum/5.0.0/gatekeep_axum/)
+and [SQLx audit API](https://docs.rs/gatekeep-sqlx/5.0.0/gatekeep_sqlx/)
+use the same required sink boundary. The runnable record service requires this
+repository, but no sibling project checkout.
 
 ## Workspace Use
 
@@ -77,8 +74,8 @@ parallel request-only and list-only policy implementations.
 ## Database Setup
 
 Install the selected Dovecote migration for durable audit. SQL lowering itself
-does not require Gatekeep tables, and a clean 4.0 installation requires no
+does not require Gatekeep tables, and a clean installation requires no
 Gatekeep audit DDL. The historical files under
 `crates/gatekeep-sqlx/migrations/{postgres,sqlite,mysql}/0001_audit.sql` remain
 available only as immutable v1 upgrade sources; do not apply them to a clean
-4.0 database.
+database.

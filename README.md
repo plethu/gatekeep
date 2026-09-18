@@ -52,14 +52,13 @@ Start with [your first gate](docs/quickstart.md), then try the
 disclosure tiers and durable audit. [Resource policies](docs/guides/resource-policies.md)
 keep application operations together without an authorization DSL.
 
-The checked authoring and selected-evidence APIs in this checkout are unreleased.
-See the [migration notes](docs/operations/improvement-migration.md) before using
-these examples with a published package.
+Upgrading from Gatekeep 4? Read the [migration notes](docs/operations/improvement-migration.md)
+for the resolver changes and audit reader rollout.
 
 ## Install
 
 ```sh
-cargo add gatekeep@4
+cargo add gatekeep@5
 ```
 
 Add only the adapters you need:
