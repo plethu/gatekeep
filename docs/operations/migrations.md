@@ -1,13 +1,13 @@
 # Migrations
 
 SQL lowering does not require Gatekeep tables. Durable decision audit is owned
-by Dovecote in 4.0.
+by Dovecote since 4.0.
 
-## New 4.0 installation
+## New installation
 
 Install the application's domain-state schema and the selected Dovecote schema.
 Call the Dovecote adapter's `check_schema` before enabling authorization audit.
-Do not apply a Gatekeep audit migration: clean 4.0 has no Gatekeep-owned audit
+Do not apply a Gatekeep audit migration: a clean installation has no Gatekeep-owned audit
 tables.
 
 Dovecote's MySQL/MariaDB schema creates validation triggers. The migration
@@ -20,6 +20,12 @@ When applying the MySQL/MariaDB artifact through SQLx, send its complete
 `sql()` value with `sqlx::raw_sql`. Do not split the artifact on semicolons:
 trigger bodies contain semicolons and must reach the server as one raw,
 unprepared multi-statement request.
+
+## 4.x to 5.0 upgrade
+
+No SQL migration is required. Follow the [checked authoring and evidence
+migration](improvement-migration.md) to update resolver implementations and deploy
+audit schema-2 readers before new writers.
 
 ## 3.x to 4.0 upgrade
 
@@ -37,8 +43,8 @@ state. The old schema is not a substitute for the tenant-aware Dovecote 0.2
 schema.
 
 The current Dovecote decoder accepts only a tenant-scoped `PagedEvent` whose
-payload declares the current audit and policy-hash versions and contains a
-current binding and fact evidence. It does not reinterpret legacy payloads.
+payload declares audit schema 1 or 2 and policy-hash version 1, and contains a
+valid binding and fact evidence. It does not reinterpret legacy payloads.
 Use the separately named legacy decoder and importer with a reviewable tenant
 and hash-format mapping before producing a current Gatekeep entry.
 
@@ -60,4 +66,4 @@ The following files are historical v1 upgrade artifacts only:
 | SQLite | `crates/gatekeep-sqlx/migrations/sqlite/0001_audit.sql` |
 | MySQL | `crates/gatekeep-sqlx/migrations/mysql/0001_audit.sql` |
 
-Do not use these files for a clean 4.0 installation, and do not rewrite them.
+Do not use these files for a clean installation, and do not rewrite them.

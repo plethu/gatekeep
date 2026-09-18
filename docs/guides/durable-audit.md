@@ -10,7 +10,7 @@ Enable the SQLx backend feature and run the matching migration:
 
 ```toml
 [dependencies]
-gatekeep-sqlx = { version = "4.0", features = ["postgres"] }
+gatekeep-sqlx = { version = "5.0", features = ["postgres"] }
 ```
 
 The compile-checked
@@ -58,7 +58,7 @@ explicitly out of scope. The production constructor requires an audit sink.
 
 ## Installation and migration
 
-For a new 4.0 installation, install the application's domain schema and the
+For a new installation, install the application's domain schema and the
 selected Dovecote schema, call `check_schema`, configure the source, and use
 the ordinary sink. No Gatekeep audit migration is required.
 

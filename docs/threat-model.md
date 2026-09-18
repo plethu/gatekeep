@@ -1,6 +1,6 @@
 # Threat model
 
-This is an engineering aid for Gatekeep 4.0, not a security audit or a
+This is an engineering aid for Gatekeep 5, not a security audit or a
 regulatory-compliance claim.
 
 ## Assets
@@ -55,8 +55,11 @@ an impossible freshness window, while Gatekeep keeps a separate receipt/
 decision time, rejects observations from after that boundary, and fails closed
 if `fresh_until` has expired. No clock-skew grace period is implicit. It always
 records a digest of the complete set and does not invent per-fact provenance.
-An application should define its source revision and freshness policy for each
-regulated decision path.
+Checked authorization requires an explicit observation, including false, for
+every required fact. Selected per-fact evidence is bounded and checked against
+the resolved set and receipt time. Applications remain responsible for the
+truth of those observations and for choosing source revisions and freshness
+windows.
 
 ### Replay, duplicate audit, and obligation confusion
 
@@ -69,8 +72,9 @@ obligation as proof of external execution.
 
 ### Migration and supply-chain failure
 
-The 2-to-3 upgrade must use the tenant-aware Dovecote 0.2 and Keepsake 3
-contracts; no tenant may be guessed as a migration default. The project gate
+Historical imports must preserve tenant ownership; no tenant may be guessed
+as a migration default. Deploy audit schema-2 readers before enabling Gatekeep
+5 writers. The project gate
 runs cargo-deny advisory checks backed by RustSec's advisory database, along
 with dependency source, license, and ban policy checks. These are review
 signals, not a substitute for dependency review, lockfile inspection, backup
