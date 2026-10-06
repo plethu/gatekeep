@@ -35,7 +35,8 @@ require multiple versions of a crate.
 `mise exec -- just check-public-api` compares default, no-default, and all-feature
 APIs against the published baselines in `scripts/check-public-api.sh`. SQLx
 requires a backend, so its no-default check selects SQLite explicitly. CI uses
-major-release mode for the planned breaking release; that mode permits breaks.
+minor-release enforcement. Use major-release mode only for an intentional
+breaking release; that mode permits breaks.
 After publication, update the baselines and restore minor-release enforcement.
 See [versioning](docs/operations/versioning.md) for durable-format compatibility.
 

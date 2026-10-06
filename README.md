@@ -14,6 +14,12 @@ It fits applications where Rust owns the authorization model. If policy needs
 to live outside the codebase or cross service and language boundaries, use a
 shared policy system instead.
 
+> [!NOTE]
+> I’m developing Gatekeep alongside my own applications, and I’d love to hear
+> how it fits yours. Questions, bug reports and suggestions are welcome. The
+> [versioning guide](docs/operations/versioning.md) covers maintained versions,
+> compatibility and upgrades.
+
 ## A policy
 
 ```rust
