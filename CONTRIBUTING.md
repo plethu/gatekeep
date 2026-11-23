@@ -84,6 +84,27 @@ set `DATABASE_URL` to a dedicated disposable PostgreSQL database and run
 [example README](examples/relation-lifecycle/README.md) for setup and transaction
 semantics. CI runs this source integration separately from registry consumers.
 
+## Dependency maintenance
+
+Dependency work is flagged and triaged without maintainer input:
+
+- Renovate (`.github/renovate.json5`) opens weekly update and lockfile
+  maintenance PRs, and security PRs at any time. It never raises the pinned Rust
+  toolchain and labels requirement raises in published crates
+  `public-dependency`.
+- The daily `dependency audit` workflow runs `cargo deny check advisories` on
+  both lockfiles, including transitive dependencies that Renovate's advisory
+  data does not cover. It keeps one `dependency-audit` issue open while
+  advisories remain and closes it when they clear.
+- The `dependency triage` workflow runs a Claude Code agent when an issue gets
+  the `dependencies` label, when the audit reports new findings, and when `ci`
+  fails on a Renovate branch. It opens PRs for semver-compatible fixes and labels
+  anything else `needs-decision`. It never merges, approves, edits `deny.toml`
+  ignores or sibling pins, or raises the toolchain.
+
+Run `scripts/checkout-relation-siblings.sh` to check out the pinned Keepsake and
+Dovecote revisions beside this repository for the relation consumer.
+
 ## Package archives and performance
 
 To check the actual archive contents before a coordinated release:
