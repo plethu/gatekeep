@@ -33,5 +33,9 @@ mod authorization_model_doctests {}
 mod decision_audit_doctests {}
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../docs/guides/layered-precedence.md")]
+mod layered_precedence_doctests {}
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../docs/installation.md")]
 mod installation_doctests {}

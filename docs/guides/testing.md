@@ -1,15 +1,22 @@
 # Testing policies
 
-Enable the core `test` feature to use `testing::compare_scenario` and
-`testing::check_lattice`. Keep scenarios small and synthetic: owner, non-owner,
-disabled account, another tenant, expired grant and backend failure are more
-useful than copies of sensitive production records.
+Enable the core `test` feature to use `testing::compare_scenario`,
+`testing::check_deciders` and `testing::check_lattice`. Keep scenarios small and
+synthetic: owner, non-owner, disabled account, another tenant, expired grant and
+backend failure are more useful than copies of sensitive production records.
 
 `compare_scenario` retains both full decisions. `authority_changed` compares
 effect, permitted outcome, obligations and denial disclosure shape.
 `explanation_changed` compares traces separately. A label change should not be
 mistaken for newly granted access. The comparison covers the supplied scenario;
 it is not proof that two policies agree for every possible input.
+
+`check_deciders` evaluates named scenarios against one policy and checks the
+effect, permitted outcome, deciding clause label and reason code of each. Use
+it to pin which layer decides when policies are composed; see
+[layered precedence](layered-precedence.md). Every mismatch is reported with
+its scenario name, labels and reason codes. Outcomes are not copied into the
+failure.
 
 `check_lattice` checks bounds, closure, idempotence, identity, absorption,
 commutativity and associativity. Supply every value for an exhaustive finite
