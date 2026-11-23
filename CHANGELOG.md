@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `gatekeep`: adds `ordered_lattice!`, which implements `Lattice` for a
+  field-less enum from a listed order and rejects missing variants at compile
+  time.
+- `gatekeep`: adds `testing::check_deciders` and `testing::Decider` behind the
+  `test` feature to pin which clause decides each named scenario.
+- Adds a [layered precedence](docs/guides/layered-precedence.md) guide covering
+  overrides, gates, exemptions and tier ceilings. Policy hashes, traces and
+  durable formats are unchanged.
+
 ## Core, Axum, Fluent and SQLx 5.0.0; Keepsake bridge 6.0.0 — 2026-09-18
 
 - Separates optional `QueryFactResolver` from point-only `FactResolver`.

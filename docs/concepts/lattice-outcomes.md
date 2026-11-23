@@ -72,6 +72,21 @@ result is their `join`, the broader value. A case owner and a support auditor
 may reach the record through different clauses. If both apply, the combined
 permit is the broader of the two grades.
 
+For a field-less enum, `ordered_lattice!` writes the same four methods from
+the listed order, narrowest first. It does not use a derived `Ord`, and a
+missing variant is a compile error:
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReadAccess {
+    None,
+    Redacted,
+    Full,
+}
+
+gatekeep::ordered_lattice!(ReadAccess: None < Redacted < Full);
+```
+
 ## Non-total outcomes
 
 Ordered enums are the easy case. Some access models are not a straight line. A
@@ -85,7 +100,8 @@ outcome is a chain or a custom algebra.
 ## Choosing an outcome type
 
 Use ordered enums for simple tiers. Put the lowest value first and derive `Ord`
-when the order is obvious to the team.
+when the order is obvious to the team, or list the order with
+`ordered_lattice!`.
 
 Use a custom `Lattice` for sets, scopes, bitflags, or records. Make the four
 methods read like your policy rules and test the combinations your service

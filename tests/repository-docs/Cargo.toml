@@ -7,7 +7,9 @@ publish = false
 rust-version.workspace = true
 
 [dependencies]
-gatekeep = { version = "5.0.0", path = "../../crates/gatekeep" }
+gatekeep = { version = "5.0.0", path = "../../crates/gatekeep", features = [
+  "test",
+] }
 serde.workspace = true
 
 [lints]
