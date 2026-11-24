@@ -7,6 +7,7 @@
 | Required restriction | Put the restriction in `all` alongside positive grants. |
 | Hidden records | Mark grant denials `hidden`; keep internal reasons out of public messages. |
 | Emergency read | Use `or_else(normal, emergency)` with authoritative expiry and lifecycle audit. |
+| Layered precedence | Overrides with `or_else`, gates with `deny_when` in `all`, tiers as `meet` ceilings; see [layered precedence](layered-precedence.md). |
 | Localized denial | Use Fluent's stable reason code and generic hidden message; check exact-locale coverage. |
 | Required audit failure | Return an application error before disclosure; retain the frozen entry for reconciliation. |
 | Permission change during a write | Resolve under the operation's lock/revision/isolation contract and write its event in the same transaction. |

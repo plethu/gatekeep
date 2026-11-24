@@ -16,6 +16,7 @@
 - [Keepsake relations](guides/keepsake-entitlements.md)
 - [Durable audit](guides/durable-audit.md)
 - [Recipes](guides/recipes.md)
+- [Layered precedence](guides/layered-precedence.md)
 - [Testing and explanations](guides/testing.md)
 - [Alternatives](alternatives.md)
 - [Why these boundaries](design.md)

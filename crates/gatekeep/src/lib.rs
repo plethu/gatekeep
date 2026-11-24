@@ -36,6 +36,7 @@ mod hooks;
 mod identity;
 mod inspection;
 mod observation;
+mod ordered_lattice;
 mod partial;
 mod pending;
 mod policy_model;

@@ -6,7 +6,7 @@ Gatekeep keeps the core crate small and puts integrations in adapter crates.
 
 | Feature | Use |
 | --- | --- |
-| `test` | exposes `InMemoryAuditSink` for tests |
+| `test` | exposes `InMemoryAuditSink` and the `testing` helpers for tests |
 
 ## `gatekeep-sqlx`
 

@@ -32,6 +32,7 @@ Use [resource policies](guides/resource-policies.md) to group operations, and
 
 - [Checked authorization and audit](guides/checked-authorization.md)
 - [Application recipes](guides/recipes.md)
+- [Layered precedence](guides/layered-precedence.md)
 - [Testing policies](guides/testing.md)
 - [Axum authorization](guides/axum-authorization.md)
 - [SQLx list filtering](guides/sqlx-list-filtering.md)
